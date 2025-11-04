@@ -23,7 +23,7 @@ def generate_launch_description() -> LaunchDescription:
     # In NED frame: x=North, y=East, z=Down
     # Takeoff position: hover at origin with 1.2m altitude
     goto_x = 0.0   # North position
-    goto_y = -1.50   # East position  
+    goto_y = -1.30   # East position  
     goto_z = -takeoff_altitude  # NED: negative means up
     
     fsm_node = Node(
@@ -42,7 +42,7 @@ def generate_launch_description() -> LaunchDescription:
             "goto_z": goto_z,
             "num_drones": 1,            # single drone
             "timer_period": 0.02,       # 50 Hz control loop
-            "alt_tol": 0.03,            # altitude tolerance in meters
+            "alt_tol": 0.01,            # altitude tolerance in meters
             "inward_offset": 0.0,       # no offset for single drone at origin
             "payload_offset_x": 0.0,    # no payload offset
             "payload_offset_y": 0.00   # match goto_y for hover

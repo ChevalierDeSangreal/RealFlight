@@ -8,7 +8,41 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
+
+include_directories(
+  include
+)
+
+add_executable(traj_test_node
+  src/traj_test_node.cpp
+  src/traj_test_main.cpp
+)
+
+ament_target_dependencies(traj_test_node
+  rclcpp
+  std_msgs
+  px4_msgs
+)
+
+# Install targets
+install(TARGETS
+  traj_test_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install launch files
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+# Install config files
+install(DIRECTORY
+  config
+  DESTINATION share/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

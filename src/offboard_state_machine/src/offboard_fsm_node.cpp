@@ -320,7 +320,10 @@ void OffboardFSM::timer_cb()
 {
   // CRITICAL: Always publish heartbeat signals first
   publish_offboard_mode();
-  publish_current_setpoint();
+  // publish_current_setpoint();
+  if (current_state_ != FsmState::TRAJ) {
+    publish_current_setpoint();
+  }
   
   // State machine logic
   switch (current_state_) {
@@ -491,7 +494,7 @@ void OffboardFSM::publish_offboard_mode()
 {
   OffboardControlMode m;
   m.position     = true;   // Position control
-  m.velocity     = false;  
+  m.velocity     = true;  
   m.acceleration = false;  
   m.attitude     = false;  
   m.body_rate    = false;
