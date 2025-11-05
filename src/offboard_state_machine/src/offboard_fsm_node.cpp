@@ -49,6 +49,13 @@ OffboardFSM::OffboardFSM(int drone_id)
 , goto_y_       (declare_parameter<double>("goto_y", std::numeric_limits<double>::quiet_NaN()))
 , goto_z_       (declare_parameter<double>("goto_z", std::numeric_limits<double>::quiet_NaN()))
 , goto_tol_     (declare_parameter("goto_tol", 0.1))
+, goto_max_vel_    (declare_parameter("goto_max_vel", 1.0))    // 1 m/s default
+, goto_accel_time_ (declare_parameter("goto_accel_time", 1.0)) // 1 sec accel
+, in_goto_transition_(false)
+, goto_duration_(0.0)
+, goto_start_x_(0.0)
+, goto_start_y_(0.0)
+, goto_start_z_(0.0)
 // payload offset
 , payload_offset_x_(declare_parameter("payload_offset_x", 0.0))
 , payload_offset_y_(declare_parameter("payload_offset_y", 0.0))
@@ -185,6 +192,69 @@ bool OffboardFSM::has_goto_target() const
          std::isfinite(goto_z_);
 }
 
+void OffboardFSM::calculate_goto_ramp(double& pos_x, double& pos_y, double& pos_z,
+                                      double& vel_x, double& vel_y, double& vel_z)
+{
+  // Calculate elapsed time since transition started
+  double t = (now() - goto_start_time_).seconds();
+  double t_norm = std::min(1.0, t / goto_duration_);  // Normalized time [0,1]
+  
+  // Position deltas
+  double dx = goto_x_ - goto_start_x_;
+  double dy = goto_y_ - goto_start_y_;
+  double dz = goto_z_ - goto_start_z_;
+  double total_dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+  
+  if (total_dist < 1e-3) {
+    // Already at target
+    pos_x = goto_x_;
+    pos_y = goto_y_;
+    pos_z = goto_z_;
+    vel_x = vel_y = vel_z = 0.0;
+    return;
+  }
+  
+  // Unit direction vector
+  double dir_x = dx / total_dist;
+  double dir_y = dy / total_dist;
+  double dir_z = dz / total_dist;
+  
+  // Trapezoidal velocity profile
+  double t_accel = goto_accel_time_ / goto_duration_;  // Normalized accel phase
+  double t_decel = 1.0 - t_accel;                      // Normalized decel phase
+  
+  double s;        // Position along path [0,1]
+  double s_dot;    // Velocity along path (normalized)
+  
+  if (t_norm < t_accel) {
+    // Acceleration phase: s = 0.5 * a * t^2
+    double ratio = t_norm / t_accel;
+    s = 0.5 * ratio * ratio * t_accel;
+    s_dot = ratio * t_accel / goto_duration_;
+  } else if (t_norm < t_decel) {
+    // Constant velocity phase
+    double cruise_duration = t_decel - t_accel;
+    s = 0.5 * t_accel + (t_norm - t_accel);
+    s_dot = 1.0 / goto_duration_;
+  } else {
+    // Deceleration phase
+    double ratio = (1.0 - t_norm) / t_accel;
+    s = 1.0 - 0.5 * ratio * ratio * t_accel;
+    s_dot = ratio * t_accel / goto_duration_;
+  }
+  
+  // Interpolated position
+  pos_x = goto_start_x_ + s * dx;
+  pos_y = goto_start_y_ + s * dy;
+  pos_z = goto_start_z_ + s * dz;
+  
+  // Velocity = speed * direction
+  double speed = s_dot * total_dist;
+  vel_x = speed * dir_x;
+  vel_y = speed * dir_y;
+  vel_z = speed * dir_z;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Publish trajectory setpoint                                      */
 /* ------------------------------------------------------------------ */
@@ -234,11 +304,28 @@ void OffboardFSM::publish_current_setpoint()
     
     case FsmState::GOTO:
       if (has_goto_target()) {
-        sp.position[0] = goto_x_;
-        sp.position[1] = goto_y_;
-        sp.position[2] = goto_z_;
+        if (in_goto_transition_) {
+          // Use smooth ramp with position + velocity
+          double ramp_x, ramp_y, ramp_z, vel_x, vel_y, vel_z;
+          calculate_goto_ramp(ramp_x, ramp_y, ramp_z, vel_x, vel_y, vel_z);
+          
+          sp.position[0] = ramp_x;
+          sp.position[1] = ramp_y;
+          sp.position[2] = ramp_z;
+          sp.velocity[0] = vel_x;
+          sp.velocity[1] = vel_y;
+          sp.velocity[2] = vel_z;
+        } else {
+          // Transition complete - hold position
+          sp.position[0] = goto_x_;
+          sp.position[1] = goto_y_;
+          sp.position[2] = goto_z_;
+          sp.velocity[0] = 0.0f;
+          sp.velocity[1] = 0.0f;
+          sp.velocity[2] = 0.0f;
+        }
       } else {
-        // Use current position as fallback
+        // Fallback to current position
         sp.position[0] = current_x_;
         sp.position[1] = current_y_;
         sp.position[2] = current_z_;
@@ -369,12 +456,11 @@ void OffboardFSM::timer_cb()
   }
 
   case FsmState::TAKEOFF: {
-    double actual_alt = -current_z_;  // Convert to +up
+    double actual_alt = -current_z_;
     
-    // Check altitude reached
     if (takeoff_complete_count_ < 0) {
       bool alt_ok = actual_alt >= (takeoff_alt_ - alt_tol_);
-      bool vel_ok = std::abs(current_z_ - last_z_) / timer_period_s_ < 0.1;  // <0.1 m/s
+      bool vel_ok = std::abs(current_z_ - last_z_) / timer_period_s_ < 0.1;
       
       if (alt_ok && vel_ok) {
         takeoff_complete_count_ = offb_counter_;
@@ -382,13 +468,30 @@ void OffboardFSM::timer_cb()
       }
     }
     
-    // Hover for 5s then transition
     if (takeoff_complete_count_ >= 0) {
       double hover_time = (offb_counter_ - takeoff_complete_count_) * timer_period_s_;
       if (hover_time >= 5.0) {
         if (has_goto_target()) {
+          // Store current position as transition start
+          goto_start_x_ = current_x_;
+          goto_start_y_ = current_y_;
+          goto_start_z_ = current_z_;
+          goto_start_time_ = now();
+          
+          // Calculate transition duration based on distance
+          double dx = goto_x_ - current_x_;
+          double dy = goto_y_ - current_y_;
+          double dz = goto_z_ - current_z_;
+          double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+          
+          // Duration = accel time + cruise time + decel time
+          double cruise_dist = std::max(0.0, dist - goto_max_vel_ * goto_accel_time_);
+          goto_duration_ = 2.0 * goto_accel_time_ + cruise_dist / goto_max_vel_;
+          
+          in_goto_transition_ = true;
           current_state_ = FsmState::GOTO;
-          RCLCPP_INFO(get_logger(), "Moving to GOTO target");
+          RCLCPP_INFO(get_logger(), "Starting GOTO transition (%.2f m, %.1f s)", 
+                      dist, goto_duration_);
         } else {
           hover_x_ = takeoff_pos_x_;
           hover_y_ = takeoff_pos_y_;
@@ -407,7 +510,6 @@ void OffboardFSM::timer_cb()
 
   case FsmState::GOTO: {
     if (!has_goto_target()) {
-      // No target, switch to hover
       hover_x_ = current_x_;
       hover_y_ = current_y_;
       hover_z_ = current_z_;
@@ -416,20 +518,29 @@ void OffboardFSM::timer_cb()
       break;
     }
 
-    // Check if reached target
-    double dx = current_x_ - goto_x_;
-    double dy = current_y_ - goto_y_;
-    double dz = current_z_ - goto_z_;
-    double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-    
-    if (dist < goto_tol_) {
-      RCLCPP_INFO(get_logger(), "GOTO target reached (error: %.3f m)", dist);
-      hover_x_ = goto_x_;
-      hover_y_ = goto_y_;
-      hover_z_ = goto_z_;
-      current_state_ = FsmState::HOVER;
-      state_start_time_ = now();
-      offb_counter_ = 0;
+    if (in_goto_transition_) {
+      // Check if ramp is complete
+      double elapsed = (now() - goto_start_time_).seconds();
+      if (elapsed >= goto_duration_) {
+        in_goto_transition_ = false;
+        RCLCPP_INFO(get_logger(), "GOTO ramp complete, holding position");
+      }
+    } else {
+      // Check if at target (position hold phase)
+      double dx = current_x_ - goto_x_;
+      double dy = current_y_ - goto_y_;
+      double dz = current_z_ - goto_z_;
+      double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+      
+      if (dist < goto_tol_) {
+        RCLCPP_INFO(get_logger(), "GOTO target reached (error: %.3f m)", dist);
+        hover_x_ = goto_x_;
+        hover_y_ = goto_y_;
+        hover_z_ = goto_z_;
+        current_state_ = FsmState::HOVER;
+        state_start_time_ = now();
+        offb_counter_ = 0;
+      }
     }
     break;
   }
@@ -493,12 +604,25 @@ void OffboardFSM::timer_cb()
 void OffboardFSM::publish_offboard_mode()
 {
   OffboardControlMode m;
-  m.position     = true;   // Position control
-  m.velocity     = true;  
-  m.acceleration = false;  
-  m.attitude     = false;  
-  m.body_rate    = false;
-  m.timestamp    = get_timestamp_us();  // Microseconds
+  
+  // Different control modes for different states
+  if (current_state_ == FsmState::TRAJ) {
+    // Attitude control for trajectory tracking
+    m.position     = true;
+    m.velocity     = true;
+    m.acceleration = false;
+    m.attitude     = false;   // Control attitude + thrust
+    m.body_rate    = false;
+  } else {
+    // Position/velocity control for all other states
+    m.position     = true;
+    m.velocity     = true;
+    m.acceleration = false;
+    m.attitude     = false;
+    m.body_rate    = false;
+  }
+  
+  m.timestamp = get_timestamp_us();
   pub_offb_mode_->publish(m);
 }
 

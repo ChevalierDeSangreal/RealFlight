@@ -26,21 +26,33 @@ private:
   void send_state_command(int state);
   
   std::string get_px4_namespace(int drone_id);
-  double calculate_effective_duration();  // NEW: Calculate duration based on max_speed
+  double calculate_effective_duration();
+  double calculate_theta_at_time(double t);
+  double calculate_angular_velocity_at_time(double t);  // NEW
 
-  // Node parameters
+  // Circle trajectory parameters
   int drone_id_;
-  double circle_radius_;
-  double circle_duration_;
-  double ramp_up_time_;
-  double ramp_down_time_;
-  double initial_x_;
-  double initial_y_;
-  double initial_z_;
-  double timer_period_;
-  double max_speed_;              // NEW: Maximum tangential speed [m/s]
-  bool use_max_speed_;            // NEW: Whether to use max_speed limit
-  double effective_duration_;     // NEW: Actual duration after speed limiting
+  double circle_radius_;              // Radius of circular path [m]
+  double circle_duration_;            // Duration for one complete circle [s]
+  int circle_times_;
+  double ramp_up_time_;               // Time to accelerate to max speed [s]
+  double ramp_down_time_;             // Time to decelerate to zero [s]
+  
+  // Circle center (origin) in NED frame
+  double circle_center_x_;            // North position of circle center [m]
+  double circle_center_y_;            // East position of circle center [m]
+  double circle_center_z_;            // Down position of circle center [m] (negative = altitude)
+  
+  // Control parameters
+  double timer_period_;               // Control loop period [s]
+  double max_speed_;                  // Maximum linear speed limit [m/s] (-1 = no limit)
+  bool use_max_speed_;
+  
+  // Calculated parameters
+  double effective_duration_;         // Actual duration after speed limiting [s]
+  double total_constant_duration_;
+  double max_angular_vel_;            // Maximum angular velocity [rad/s]
+  double angular_acceleration_;       // Angular acceleration [rad/s²]
   
   // State management
   enum class FsmState {
@@ -57,12 +69,12 @@ private:
   
   FsmState current_state_;
   bool waiting_traj_;
-  bool traj_command_sent_;   
+  bool traj_command_sent_;
   bool traj_started_;
   rclcpp::Time hover_detect_time_;
   rclcpp::Time traj_start_time_;
   
-  // Current position (reordered to match initialization order)
+  // Current drone position (from odometry)
   double current_x_;
   double current_y_;
   double current_z_;

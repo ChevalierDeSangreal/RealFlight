@@ -13,31 +13,96 @@ TrajTestNode::TrajTestNode(int drone_id)
   , current_z_(0.0)           
   , odom_ready_(false)        
 {
-  // Declare and get parameters
+  // Params
   circle_radius_    = this->declare_parameter("circle_radius", 2.0);
   circle_duration_  = this->declare_parameter("circle_duration", 20.0);
+  circle_times_     = this->declare_parameter("circle_times", 1);  // Number of circles
   ramp_up_time_     = this->declare_parameter("ramp_up_time", 3.0);
   ramp_down_time_   = this->declare_parameter("ramp_down_time", 3.0);
-  initial_x_        = this->declare_parameter("initial_x", 0.0);
-  initial_y_        = this->declare_parameter("initial_y", 0.0);
-  initial_z_        = this->declare_parameter("initial_z", -1.5);  // NED frame
+  
+  // Circle center
+  circle_center_x_  = this->declare_parameter("circle_center_x", 0.0);
+  circle_center_y_  = this->declare_parameter("circle_center_y", 0.0);
+  circle_center_z_  = this->declare_parameter("circle_center_z", -1.5);
+  
   timer_period_     = this->declare_parameter("timer_period", 0.02);
   
-  // NEW: Maximum speed parameter
-  max_speed_        = this->declare_parameter("max_speed", -1.0);  // -1 means no limit
+  // Max speed
+  max_speed_        = this->declare_parameter("max_speed", -1.0);
   use_max_speed_    = (max_speed_ > 0.0);
   
-  // Get PX4 namespace
+  // Validate circle_times
+  if (circle_times_ < 1) {
+    RCLCPP_WARN(this->get_logger(), 
+                "circle_times must be >= 1, setting to 1");
+    circle_times_ = 1;
+  }
+  
+  // PX4 namespace
   px4_namespace_ = get_px4_namespace(drone_id_);
   
-  // Calculate effective duration considering max_speed
+  // Effective duration (one circle)
   effective_duration_ = calculate_effective_duration();
   
+  // Max angular velocity (one circle)
+  max_angular_vel_ = 2.0 * M_PI / effective_duration_;
+  
+  // Angular accel
+  angular_acceleration_ = max_angular_vel_ / ramp_up_time_;
+  
+  // Total constant phase duration (all circles)
+  total_constant_duration_ = effective_duration_ * circle_times_;
+  
   RCLCPP_INFO(this->get_logger(), 
-              "Initializing trajectory test node for drone %d", drone_id_);
-  RCLCPP_INFO(this->get_logger(), 
-              "Circle radius: %.2f m, duration: %.2f s", 
-              circle_radius_, circle_duration_);
+              "=== Trajectory Test Node for Drone %d ===", drone_id_);
+
+  RCLCPP_INFO(this->get_logger(),
+              "Circle Parameters:");
+  RCLCPP_INFO(this->get_logger(),
+              "  - Radius: %.2f m", circle_radius_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Center (NED): [%.2f, %.2f, %.2f] m",
+              circle_center_x_, circle_center_y_, circle_center_z_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Altitude: %.2f m (above ground)",
+              -circle_center_z_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Number of circles: %d", circle_times_);
+  
+  RCLCPP_INFO(this->get_logger(),
+              "Timing:");
+  RCLCPP_INFO(this->get_logger(),
+              "  - Duration per circle: %.2f s", effective_duration_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Total constant speed duration: %.2f s (%.2f s × %d circles)", 
+              total_constant_duration_, effective_duration_, circle_times_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Ramp-up time: %.2f s", ramp_up_time_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Ramp-down time: %.2f s", ramp_down_time_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Total trajectory time: %.2f s", 
+              ramp_up_time_ + total_constant_duration_ + ramp_down_time_);
+  
+  RCLCPP_INFO(this->get_logger(),
+              "Velocity Parameters:");
+  RCLCPP_INFO(this->get_logger(),
+              "  - Max angular velocity: %.3f rad/s (%.1f deg/s)",
+              max_angular_vel_, max_angular_vel_ * 180.0 / M_PI);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Angular acceleration: %.3f rad/s²",
+              angular_acceleration_);
+  
+  double max_linear_vel = max_angular_vel_ * circle_radius_;
+  RCLCPP_INFO(this->get_logger(),
+              "  - Max linear velocity: %.3f m/s",
+              max_linear_vel);
+  
+  // Calculate total angle traveled
+  double total_angle_rad = 2.0 * M_PI * circle_times_;
+  RCLCPP_INFO(this->get_logger(),
+              "  - Total angle during constant phase: %.1f rad (%.1f degrees, %d circles)",
+              total_angle_rad, total_angle_rad * 180.0 / M_PI, circle_times_);
   
   if (use_max_speed_) {
     double nominal_speed = (2.0 * M_PI * circle_radius_) / circle_duration_;
@@ -53,6 +118,7 @@ TrajTestNode::TrajTestNode(int drone_id)
   
   RCLCPP_INFO(this->get_logger(), 
               "PX4 namespace: %s", px4_namespace_.c_str());
+  RCLCPP_INFO(this->get_logger(), "==========================================");
   
   // Publishers
   traj_pub_ = this->create_publisher<px4_msgs::msg::TrajectorySetpoint>(
@@ -91,21 +157,19 @@ std::string TrajTestNode::get_px4_namespace(int drone_id)
   }
 }
 
-// NEW: Calculate effective duration based on max_speed constraint
 double TrajTestNode::calculate_effective_duration()
 {
   if (!use_max_speed_) {
-    // No speed limit, use configured duration
     return circle_duration_;
   }
   
-  // Calculate the minimum duration required to respect max_speed
-  // Tangential velocity: v = ω * r = (2π/T) * r
-  // To limit v ≤ v_max: T ≥ (2π * r) / v_max
+  // Circumference
   double circumference = 2.0 * M_PI * circle_radius_;
+  
+  // Minimum duration based on max speed
   double min_duration = circumference / max_speed_;
   
-  // Use the larger of configured duration or minimum required duration
+  // Use larger of configured or minimum required
   if (min_duration > circle_duration_) {
     return min_duration;
   }
@@ -113,11 +177,90 @@ double TrajTestNode::calculate_effective_duration()
   return circle_duration_;
 }
 
+// Compute angular position at time t.
+// Accounts for ramp-up, constant, ramp-down, and stop phases.
+double TrajTestNode::calculate_theta_at_time(double t)
+{
+  double theta = 0.0;
+  double omega_max = max_angular_vel_;
+  double alpha = angular_acceleration_;
+  double t_up = ramp_up_time_;
+  double t_const = total_constant_duration_;  // Use total duration for all circles
+  double t_down = ramp_down_time_;
+  
+  // Phase 1: Ramp-up (0 to t_up)
+  if (t <= t_up) {
+    theta = 0.5 * alpha * t * t;
+  }
+  // Phase 2: Constant velocity (t_up to t_up + t_const)
+  else if (t <= t_up + t_const) {
+    double theta_at_t_up = 0.5 * alpha * t_up * t_up;
+    double dt = t - t_up;
+    theta = theta_at_t_up + omega_max * dt;
+  }
+  // Phase 3: Ramp-down (t_up + t_const to t_up + t_const + t_down)
+  else if (t <= t_up + t_const + t_down) {
+    double theta_at_t_up = 0.5 * alpha * t_up * t_up;
+    double theta_at_start_down = theta_at_t_up + omega_max * t_const;
+    
+    double t_start_down = t_up + t_const;
+    double dt = t - t_start_down;
+    
+    theta = theta_at_start_down + omega_max * dt - 0.5 * alpha * dt * dt;
+  }
+  // Phase 4: Stopped (beyond trajectory time)
+  else {
+    // Final theta at end of ramp-down
+    double theta_at_t_up = 0.5 * alpha * t_up * t_up;
+    double theta_at_start_down = theta_at_t_up + omega_max * t_const;
+    theta = theta_at_start_down + omega_max * t_down - 0.5 * alpha * t_down * t_down;
+  }
+  
+  return theta;
+}
+
+// Compute angular velocity at time t.
+double TrajTestNode::calculate_angular_velocity_at_time(double t)
+{
+  double omega_max = max_angular_vel_;
+  double alpha = angular_acceleration_;
+  double t_up = ramp_up_time_;
+  double t_const = total_constant_duration_;  // Use total duration
+  double t_down = ramp_down_time_;
+  double t_start_down = t_up + t_const;
+  
+  double current_omega = 0.0;
+
+  // Phase 1: Ramp-up
+  if (t <= t_up) {
+    current_omega = alpha * t;
+  }
+  // Phase 2: Constant velocity
+  else if (t <= t_start_down) {
+    current_omega = omega_max;
+  }
+  // Phase 3: Ramp-down
+  else if (t <= t_start_down + t_down) {
+    double dt_down = t - t_start_down;
+    current_omega = omega_max - alpha * dt_down;
+    current_omega = std::max(0.0, current_omega);
+  }
+  // Phase 4: Stopped
+  else {
+    current_omega = 0.0;
+  }
+  
+  return current_omega;
+}
+
 void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
 {
   auto state = static_cast<FsmState>(msg->data);
+  
+  // Update current state
+  current_state_ = state;
 
-  // first time HOVER detected
+  // first HOVER detection
   if (state == FsmState::HOVER &&
       !waiting_traj_ &&
       !traj_command_sent_ &&
@@ -134,20 +277,18 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     send_state_command(static_cast<int>(FsmState::TRAJ));
     traj_command_sent_ = true;
     traj_start_time_ = this->now();
-    // hover_detect_time_ = rclcpp::Time(0);  // reset
-    // waiting_traj_ = false;
   }
 
-  // TRAJ state detected
+  // TRAJ detected
   if (state == FsmState::TRAJ && waiting_traj_ && !traj_started_) {
     traj_started_ = true;
     waiting_traj_ = false;
-    traj_command_sent_ = false;  // clear
+    traj_command_sent_ = false;
     RCLCPP_INFO(this->get_logger(),
-                "FSM entered TRAJ, trajectory start running");
+                "FSM entered TRAJ, trajectory generation started");
   }
 
-  // started but exited, reset
+  // Exited TRAJ, reset
   if (traj_started_ && state != FsmState::TRAJ) {
     traj_started_ = false;
     waiting_traj_ = false;
@@ -169,19 +310,20 @@ void TrajTestNode::odom_callback(
 void TrajTestNode::timer_callback()
 {
   if (!odom_ready_) {
-    RCLCPP_INFO(this->get_logger(),
-                "Failed to get odometry!");
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Waiting for odometry...");
     return;
   }
   
-  // Only generate trajectory in TRAJ state
+  // Only run in TRAJ state
   if (current_state_ == FsmState::TRAJ && traj_started_) {
     double elapsed = (this->now() - traj_start_time_).seconds();
     
-    // Check if trajectory is complete (using effective_duration_)
-    double total_time = ramp_up_time_ + effective_duration_ + ramp_down_time_;
+    // Check if complete
+    double total_time = ramp_up_time_ + total_constant_duration_ + ramp_down_time_;
     if (elapsed >= total_time) {
-      RCLCPP_INFO(this->get_logger(), "Circular trajectory complete");
+      RCLCPP_INFO(this->get_logger(), 
+                  "Circular trajectory complete (%d circles)", circle_times_);
       send_state_command(static_cast<int>(FsmState::END_TRAJ));
       traj_started_ = false;
       return;
@@ -189,69 +331,64 @@ void TrajTestNode::timer_callback()
     
     // Generate trajectory point
     generate_circular_trajectory(elapsed);
-    RCLCPP_INFO(this->get_logger(), "sending trajectory...");
   }
 }
 
+// Generate circular trajectory setpoint
 void TrajTestNode::generate_circular_trajectory(double t)
 {
   double x, y, z, vx, vy, vz, yaw;
   
-  // Phase determination
-  double phase_time = t;
-  double speed_factor = 1.0;
+  // angular velocity
+  double current_omega = calculate_angular_velocity_at_time(t);
   
-  // Ramp up phase
-  if (t < ramp_up_time_) {
-    speed_factor = t / ramp_up_time_;  // Linear ramp from 0 to 1
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                         "Ramp up phase: %.1f%%", speed_factor * 100.0);
-  }
-  // Constant speed phase (using effective_duration_)
-  else if (t < ramp_up_time_ + effective_duration_) {
-    speed_factor = 1.0;
-    phase_time = t - ramp_up_time_;
-  }
-  // Ramp down phase
-  else {
-    double ramp_down_elapsed = t - ramp_up_time_ - effective_duration_;
-    speed_factor = 1.0 - (ramp_down_elapsed / ramp_down_time_);
-    speed_factor = std::max(0.0, speed_factor);
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                         "Ramp down phase: %.1f%%", speed_factor * 100.0);
-  }
+  // angular position, may exceed one full rotation
+  double theta = calculate_theta_at_time(t);
   
-  // Angular position (counter-clockwise in NED frame)
-  // Use effective_duration_ instead of circle_duration_
-  double omega = 2.0 * M_PI / effective_duration_;
-  double theta = omega * phase_time * speed_factor;
+  // position on circle
+  x = circle_center_x_ + circle_radius_ * std::cos(theta);
+  y = circle_center_y_ + circle_radius_ * std::sin(theta);
+  z = circle_center_z_;  // constant altitude
   
-  // Circular trajectory centered at initial position
-  // In NED frame: X=North, Y=East, Z=Down
-  x = initial_x_ + circle_radius_ * std::cos(theta);
-  y = initial_y_ + circle_radius_ * std::sin(theta);
-  z = initial_z_;  // Maintain constant altitude
+  // linear velocity
+  double v_linear = current_omega * circle_radius_;
   
-  // Velocity (tangent to circle)
-  double v_mag = omega * circle_radius_ * speed_factor;
-  vx = -v_mag * std::sin(theta);
-  vy =  v_mag * std::cos(theta);
+  // velocity direction
+  vx = -v_linear * std::sin(theta);
+  vy =  v_linear * std::cos(theta);
   vz = 0.0;
   
-  // Yaw (tangent direction)
+  // yaw aligned with motion
   yaw = theta + M_PI / 2.0;
-  
-  // Wrap yaw to [-pi, pi]
   while (yaw > M_PI) yaw -= 2.0 * M_PI;
   while (yaw < -M_PI) yaw += 2.0 * M_PI;
   
-  // Publish trajectory setpoint
+  // Publish
   publish_trajectory_setpoint(x, y, z, vx, vy, vz, yaw);
   
-  // Debug output (throttled) - show actual speed
+  // Debug (throttled) with circle count
+  double t_up = ramp_up_time_;
+  double t_const = total_constant_duration_;
+  std::string phase;
+  double current_circle = 0.0;
+  
+  if (t <= t_up) {
+    phase = "RAMP-UP";
+    current_circle = 0.0;
+  } else if (t <= t_up + t_const) {
+    phase = "CONSTANT";
+    // which circle
+    double elapsed_const = t - t_up;
+    current_circle = elapsed_const / effective_duration_;
+  } else {
+    phase = "RAMP-DOWN";
+    current_circle = circle_times_;
+  }
+  
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                       "Traj t=%.1fs: pos=[%.2f, %.2f, %.2f], vel=[%.2f, %.2f], speed=%.2f m/s, yaw=%.2f°",
-                       t, x, y, z, vx, vy, v_mag, yaw * 180.0 / M_PI);
+                       "[%s] t=%.1fs | circle=%.2f/%d | pos=[%.2f,%.2f,%.2f] | v_lin=%.2f m/s",
+                       phase.c_str(), t, current_circle, circle_times_,
+                       x, y, z, v_linear);
 }
 
 void TrajTestNode::publish_trajectory_setpoint(

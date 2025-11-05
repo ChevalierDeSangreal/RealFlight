@@ -47,7 +47,10 @@ private:
   void try_set_offboard_and_arm();
   void generate_trajectory();
   bool has_goto_target() const;
+  void calculate_goto_ramp(double& pos_x, double& pos_y, double& pos_z,
+                         double& vel_x, double& vel_y, double& vel_z);
   uint64_t get_timestamp_us();
+  
   // Publishers
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr pub_offb_mode_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr pub_traj_sp_;
@@ -81,6 +84,13 @@ private:
   double goto_y_;
   double goto_z_;
   double goto_tol_;
+  // GOTO transition parameters
+  double goto_max_vel_;              // Max velocity during GOTO transitions
+  double goto_accel_time_;           // Time to accelerate to max velocity
+  rclcpp::Time goto_start_time_;     // Transition start time
+  double goto_start_x_, goto_start_y_, goto_start_z_;  // Transition start position
+  double goto_duration_;             // Total transition duration (calculated)
+  bool in_goto_transition_;          // True during position/velocity ramp phase
   
   // Payload offset
   double payload_offset_x_;

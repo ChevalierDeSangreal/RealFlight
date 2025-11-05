@@ -17,3 +17,7 @@
 	path = src/mocap_px4_bridge
 	url = https://github.com/SaxionMechatronics/mocap_px4_bridge.git
 	branch = master
+[submodule "src/ros2-vicon-receiver"]
+	path = src/ros2-vicon-receiver
+	url = https://github.com/CarlsonGYC/ros2-vicon-receiver.git
+	branch = humble

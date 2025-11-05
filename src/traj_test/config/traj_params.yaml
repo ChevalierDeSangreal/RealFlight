@@ -4,28 +4,14 @@
 /**:
   ros__parameters:
 
-    # Drone identification
     drone_id: 0  # Set this for each drone (0, 1, 2, ...)
-
-    # Circle trajectory parameters
-    circle_radius: 2.0        # Radius of the circular trajectory [m]
-    circle_duration: 20.0     # Time to complete one full circle at constant speed [s]
-
-    # Speed profile parameters
-    ramp_up_time: 3.0         # Time to accelerate from 0 to full speed [s]
-    ramp_down_time: 3.0       # Time to decelerate from full speed to 0 [s]
-    max_speed: 1.5
-
-    # Initial position (center of circle, NED frame)
-    # Note: In NED frame, Z is down, so negative values mean higher altitude
-    initial_x: 0.0            # North position [m]
-    initial_y: 0.0            # East position [m]
-    initial_z: -1.5           # Down position (negative = up) [m]
-
-    # Control loop timing
-    timer_period: 0.02        # Control loop period [s] (50 Hz)
-
-    # Multi-drone configuration
-    # The PX4 namespace is automatically determined in code:
-    # - Drone 0: /fmu/
-    # - Drone i (i>0): /px4_{i}/fmu/
+    circle_radius: 1.50              # Radius of circular trajectory [m]
+    circle_center_x: 0.0            # North position of center [m]
+    circle_center_y: 0.0            # East position of center [m]
+    circle_center_z: -1.5           # Down position of center [m] (negative = up!)
+    circle_duration: 3.0           # Time for one complete circle at constant speed [s]
+    circle_times: 2
+    ramp_up_time: 6.0               # Time to accelerate from 0 to max speed [s]
+    ramp_down_time: 6.0             # Time to decelerate from max to 0 [s]
+    max_speed: -1.0                 # Maximum linear velocity [m/s] (-1 = no limit)
+    timer_period: 0.02              # Control loop period [s] (50 Hz default)
