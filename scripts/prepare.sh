@@ -25,6 +25,18 @@ set -e  # Exit on any error
 # ============================================================================
 # Environment Variable Validation
 # ============================================================================
+
+echo "======================================"
+echo "sync with remote time server if ssh connected..."
+echo "======================================"
+
+if [[ -n "$SSH_CONNECTION" ]]; then
+    REMOTE_IP=$(echo $SSH_CONNECTION | awk '{print $1}')
+    if command -v ntpdate >/dev/null 2>&1; then
+        sudo ntpdate -u "$REMOTE_IP" && echo "time already sync with $REMOTE_IP."
+    fi
+fi
+
 echo "======================================"
 echo "Checking Environment Variables..."
 echo "======================================"
