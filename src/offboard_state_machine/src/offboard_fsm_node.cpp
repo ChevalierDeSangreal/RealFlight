@@ -823,12 +823,12 @@ void OffboardFSM::publish_offboard_mode()
   bool has_active_seg = active_seg_.has_value();
   
   if (current_state_ == FsmState::TRAJ) {
-    // External trajectory control
-    m.position     = true;
+    // External body rate control
+    m.position     = false;
     m.velocity     = false;
     m.acceleration = false;
     m.attitude     = false;
-    m.body_rate    = false;
+    m.body_rate    = true;
   } else if (has_active_seg) {
     // Minimum jerk trajectory with feedforward
     m.position     = true;
