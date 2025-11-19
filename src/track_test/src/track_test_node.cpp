@@ -159,11 +159,15 @@ TrackTestNode::TrackTestNode(int drone_id)
     std::bind(&TrackTestNode::odom_callback, this, std::placeholders::_1));
   
   // Timer
-  timer_ = this->create_wall_timer(
-    std::chrono::duration<double>(timer_period_),
-    std::bind(&TrackTestNode::timer_callback, this));
+  timer_ = rclcpp::create_timer(
+    this,
+    this->get_clock(),
+    rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(timer_period_)
+    )),
+    std::bind(&TrajTestNode::timer_callback, this));
     
-  RCLCPP_INFO(this->get_logger(), "Angular rate control test node initialized");
+    RCLCPP_INFO(this->get_logger(), "Timer initialized at %.0f Hz", 1.0/timer_period_);
 }
 
 std::string TrackTestNode::get_px4_namespace(int drone_id)
@@ -437,7 +441,7 @@ void TrackTestNode::publish_rates_setpoint(
   msg.thrust_body[1] = 0.0;  // Right thrust
   msg.thrust_body[2] = -thrust;  // Down thrust (negative for upward)
   
-  msg.timestamp = offboard_utils::get_timestamp_us();
+  msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
   
   rates_pub_->publish(msg);
 }
@@ -452,7 +456,7 @@ void TrackTestNode::publish_offboard_control_mode()
   msg.attitude = false;
   msg.body_rate = true;  // Enable body rate control
   
-  msg.timestamp = offboard_utils::get_timestamp_us();
+  msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
   
   control_mode_pub_->publish(msg);
 }

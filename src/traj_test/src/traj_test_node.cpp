@@ -139,12 +139,14 @@ TrajTestNode::TrajTestNode(int drone_id)
     rclcpp::SensorDataQoS(),
     std::bind(&TrajTestNode::vehicle_rates_setpoint_callback, this, std::placeholders::_1));
   
-  // Timer
-  timer_ = this->create_wall_timer(
-    std::chrono::duration<double>(timer_period_),
+  // Timer using node clock (respects use_sim_time)
+  timer_ = rclcpp::create_timer(
+    this,
+    this->get_clock(),
+    rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(timer_period_)
+    )),
     std::bind(&TrajTestNode::timer_callback, this));
-    
-  RCLCPP_INFO(this->get_logger(), "Trajectory test node initialized");
 }
 
 std::string TrajTestNode::get_px4_namespace(int drone_id)
@@ -435,23 +437,33 @@ void TrajTestNode::publish_neural_control()
   msg.thrust_body[2] = -thrust_normalized;  // Negative for upward thrust in NED
   
   // Timestamp
-  msg.timestamp = offboard_utils::get_timestamp_us();
+  // msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
+  msg.timestamp = 0;
   
   // Publish
   rates_pub_->publish(msg);
   
   // Debug: Log neural network output
-  // Show whether this is a new inference or repeated action
-  if (is_new_inference) {
-    // Print every new inference (no throttle)
+  // Print every frame in the first 0.5 seconds
+  if (accumulated_elapsed_ < 0.5) {
     RCLCPP_INFO(this->get_logger(),
-                "[NEW NN OUTPUT] thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s",
+                "[t=%.3fs] %s thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s",
+                accumulated_elapsed_,
+                is_new_inference ? "NEW" : "REPEAT",
                 thrust_normalized, thrust_raw, omega_x, omega_y, omega_z);
   } else {
-    // Log repeated actions at DEBUG level to reduce clutter
-    RCLCPP_DEBUG(this->get_logger(),
-                 "[REPEAT] thrust=%.3f, rates=[%.3f, %.3f, %.3f] rad/s",
-                 thrust_normalized, omega_x, omega_y, omega_z);
+    // After 0.5s, show whether this is a new inference or repeated action
+    if (is_new_inference) {
+      // Print every new inference (no throttle)
+      RCLCPP_INFO(this->get_logger(),
+                  "[NEW NN OUTPUT] thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s",
+                  thrust_normalized, thrust_raw, omega_x, omega_y, omega_z);
+    } else {
+      // Log repeated actions at DEBUG level to reduce clutter
+      RCLCPP_DEBUG(this->get_logger(),
+                   "[REPEAT] thrust=%.3f, rates=[%.3f, %.3f, %.3f] rad/s",
+                   thrust_normalized, omega_x, omega_y, omega_z);
+    }
   }
 }
 
@@ -473,10 +485,18 @@ void TrajTestNode::publish_hover_setpoint()
   msg.thrust_body[2] = static_cast<float>(-hover_thrust_);  // Down thrust (negative = upward)
   
   // Timestamp
-  msg.timestamp = offboard_utils::get_timestamp_us();
+  // msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
+  msg.timestamp = 0;
   
   // Publish
   rates_pub_->publish(msg);
+  
+  // Debug: Print every frame in the first 0.5 seconds
+  if (accumulated_elapsed_ < 0.5) {
+    RCLCPP_INFO(this->get_logger(),
+                "[t=%.3fs] FALLBACK thrust=%.3f, rates=[0.0, 0.0, 0.0] rad/s",
+                accumulated_elapsed_, hover_thrust_);
+  }
 }
 
 void TrajTestNode::send_state_command(int state)

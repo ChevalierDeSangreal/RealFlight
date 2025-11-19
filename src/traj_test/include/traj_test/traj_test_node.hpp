@@ -11,6 +11,7 @@
 #include "traj_test/tflite_policy.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 #include <memory>
 #include <deque>
