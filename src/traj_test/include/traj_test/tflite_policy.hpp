@@ -191,6 +191,14 @@ public:
     bool is_initialized() const {
         return initialized_;
     }
+    
+    /**
+     * 获取当前展平的缓冲区数据（用于调试）
+     * @return 展平的缓冲区数据 [action(4), obs(9)] * BUFFER_SIZE
+     */
+    std::vector<float> get_flattened_buffer() const {
+        return buffer_.get_flattened_buffer();
+    }
 
 private:
     /**

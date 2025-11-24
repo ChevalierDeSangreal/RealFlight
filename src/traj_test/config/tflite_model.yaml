@@ -12,7 +12,7 @@
     
     # Control timing
     timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)
-    hover_duration: 5.0  # Duration to run trajectory control [seconds] (+ 1s wait = 4s total)
+    hover_duration: 10.0  # Duration to run trajectory control [seconds] (+ 1s wait = 4s total)
     
     # Fallback hover parameters (used if neural control fails)
     hover_thrust: 0.71  # Normalized thrust for hovering [0.0-1.0]
