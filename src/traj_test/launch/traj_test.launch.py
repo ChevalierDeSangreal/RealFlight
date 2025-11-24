@@ -35,7 +35,10 @@ def generate_launch_description():
         executable='traj_test_node',
         name=['traj_test_node_', drone_id],
         namespace='',
-        parameters=[config_file, {'drone_id': drone_id}],
+        parameters=[config_file, {
+            'drone_id': drone_id,
+            'use_sim_time': True
+        }],
         output='screen',
         emulate_tty=True,
         arguments=[drone_id]

@@ -8,7 +8,7 @@
     
     # Model path (relative to package share directory or absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/carlson/wangzimo/realflight_ws/src/traj_test/config/trackVer8_policy_stable.tflite"
+    model_path: "/home/carlson/wangzimo/realflight_ws/src/traj_test/config/trackVer8_policy_stabler.tflite"
     
     # Control timing
     timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)
@@ -20,9 +20,9 @@
     # Target position/trajectory (in NED frame, meters)
     # Target is 1m in front of drone at GOTO position [-1.5, 0.0, -1.5]
     # Drone faces north (yaw=0), so target is along +X direction
-    target_x: -0.5  # -1.5 + 1.0 = -0.5 (1m forward from drone)
+    target_x: 2.01  # 1.5 + 1.0 = 2.5 (1m forward from drone)
     target_y: 0.0   # No lateral offset
-    target_z: -1.5  # Same altitude as drone (NED: negative = above ground)
+    target_z: -1.21  # Same altitude as drone (NED: negative = above ground)
     
     # Target velocity (optional, for tracking moving targets)
     target_vx: 0.0

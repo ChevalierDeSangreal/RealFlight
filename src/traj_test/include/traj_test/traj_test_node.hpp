@@ -16,6 +16,8 @@
 #include <memory>
 #include <deque>
 #include <array>
+#include <mutex>
+#include <vector>
 
 class TrajTestNode : public rclcpp::Node
 {
@@ -23,15 +25,21 @@ public:
   explicit TrajTestNode(int drone_id);
 
 private:
-  void timer_callback();
+  // Timer callbacks (two-timer architecture)
+  void action_update_callback();  // 10Hz: Neural network inference
+  void control_send_callback();   // 100Hz: High-frequency command transmission
+  
+  // ROS2 subscriber callbacks
   void state_callback(const std_msgs::msg::Int32::SharedPtr msg);
   void odom_callback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
   void local_position_callback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg);
   void attitude_callback(const px4_msgs::msg::VehicleAttitude::SharedPtr msg);
   void vehicle_rates_setpoint_callback(const px4_msgs::msg::VehicleRatesSetpoint::SharedPtr msg);
   
-  void publish_neural_control();
-  void publish_hover_setpoint();
+  // Control functions
+  void update_neural_action();       // Update action from neural network
+  void publish_current_action();     // Publish current action at high frequency
+  void publish_hover_setpoint();     // Fallback hover control
   void send_state_command(int state);
   
   std::vector<float> get_observation();
@@ -45,9 +53,11 @@ private:
   int drone_id_;
   double hover_duration_;             // Duration to hover [s]
   double hover_thrust_;               // Hover thrust [0.0-1.0]
+  double mode_stabilization_delay_;   // Delay before starting neural control to ensure mode switch [s]
   
-  // Control parameters
-  double timer_period_;               // Control loop period [s]
+  // Control parameters (two-timer architecture)
+  double action_update_period_;       // Action update period [s] (10Hz for NN inference)
+  double control_send_period_;        // Control send period [s] (100Hz for command transmission)
   
   // State management
   enum class FsmState {
@@ -67,9 +77,9 @@ private:
   bool hover_command_sent_;
   bool hover_started_;
   bool hover_completed_;
+  bool neural_control_ready_;         // True when mode stabilization delay has passed
   rclcpp::Time hover_detect_time_;
   rclcpp::Time hover_start_time_;
-  double accumulated_elapsed_;        // Accumulated time since hover start [s]
   
   // Hover position (captured when entering TRAJ state)
   double hover_x_;
@@ -109,6 +119,13 @@ private:
   std::string model_path_;
   bool use_neural_control_;
   
+  // Current action storage (shared between timers)
+  std::vector<float> current_action_;  // [thrust, omega_x, omega_y, omega_z]
+  std::mutex action_mutex_;            // Protect current_action_ from concurrent access
+  
+  // Step counter for debugging
+  int step_counter_;                   // Track number of neural network inference steps
+  
   // ROS2 interfaces
   std::string px4_namespace_;
   rclcpp::Publisher<px4_msgs::msg::VehicleRatesSetpoint>::SharedPtr rates_pub_;
@@ -124,7 +141,9 @@ private:
   // Debug: Subscribe to PX4's actual vehicle rates setpoint (what PX4 is executing)
   rclcpp::Subscription<px4_msgs::msg::VehicleRatesSetpoint>::SharedPtr rates_setpoint_sub_;
   
-  rclcpp::TimerBase::SharedPtr timer_;
+  // Two-timer architecture
+  rclcpp::TimerBase::SharedPtr action_update_timer_;  // 10Hz: Neural network inference
+  rclcpp::TimerBase::SharedPtr control_send_timer_;   // 100Hz: Command transmission
 };
 
 #endif  // TRAJ_TEST_NODE_HPP_

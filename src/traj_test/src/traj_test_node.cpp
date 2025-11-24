@@ -35,7 +35,7 @@ TrajTestNode::TrajTestNode(int drone_id)
   , hover_command_sent_(false)
   , hover_started_(false)
   , hover_completed_(false)
-  , accumulated_elapsed_(0.0)
+  , neural_control_ready_(false)
   , hover_x_(0.0)
   , hover_y_(0.0)
   , hover_z_(0.0)
@@ -62,11 +62,15 @@ TrajTestNode::TrajTestNode(int drone_id)
   , target_vy_(0.0)
   , target_vz_(0.0)
   , use_neural_control_(false)
+  , current_action_(4, 0.0f)  // Initialize with zero action [thrust, omega_x, omega_y, omega_z]
+  , step_counter_(0)           // Initialize step counter
 {
   // Parameters
   hover_duration_   = this->declare_parameter("hover_duration", 3.0);  // TRAJ control duration: 3.0s
-  hover_thrust_     = this->declare_parameter("hover_thrust", 0.71);
-  timer_period_     = this->declare_parameter("timer_period", 0.01);  // 100 Hz to match training
+  hover_thrust_     = this->declare_parameter("hover_thrust", 0.581);
+  mode_stabilization_delay_ = this->declare_parameter("mode_stabilization_delay", 0.6);  // Wait 0.6s for mode switch
+  action_update_period_ = this->declare_parameter("action_update_period", 0.1);  // 10 Hz for NN inference
+  control_send_period_  = this->declare_parameter("control_send_period", 0.01);  // 100 Hz for control commands
   use_neural_control_ = this->declare_parameter("use_neural_control", true);
   model_path_       = this->declare_parameter("model_path", "");
   target_x_         = this->declare_parameter("target_x", 0.0);
@@ -85,7 +89,11 @@ TrajTestNode::TrajTestNode(int drone_id)
   RCLCPP_INFO(this->get_logger(),
               "  - Use neural control: %s", use_neural_control_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(),
-              "  - Control period: %.3f s (%.1f Hz)", timer_period_, 1.0/timer_period_);
+              "  - Mode stabilization delay: %.2f s (wait for body_rate mode)", mode_stabilization_delay_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Action update period: %.3f s (%.1f Hz)", action_update_period_, 1.0/action_update_period_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Control send period: %.3f s (%.1f Hz)", control_send_period_, 1.0/control_send_period_);
   RCLCPP_INFO(this->get_logger(),
               "  - Target: [%.2f, %.2f, %.2f]", target_x_, target_y_, target_z_);
   RCLCPP_INFO(this->get_logger(), 
@@ -139,14 +147,27 @@ TrajTestNode::TrajTestNode(int drone_id)
     rclcpp::SensorDataQoS(),
     std::bind(&TrajTestNode::vehicle_rates_setpoint_callback, this, std::placeholders::_1));
   
-  // Timer using node clock (respects use_sim_time)
-  timer_ = rclcpp::create_timer(
+  // Two-timer architecture to avoid accumulated timing errors:
+  // 1. Action update timer (10Hz): Neural network inference
+  // 2. Control send timer (100Hz): High-frequency command transmission
+  
+  // Action update timer (10Hz for neural network inference)
+  action_update_timer_ = rclcpp::create_timer(
     this,
     this->get_clock(),
     rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::duration<double>(timer_period_)
+      std::chrono::duration<double>(action_update_period_)
     )),
-    std::bind(&TrajTestNode::timer_callback, this));
+    std::bind(&TrajTestNode::action_update_callback, this));
+  
+  // Control send timer (100Hz for sending control commands)
+  control_send_timer_ = rclcpp::create_timer(
+    this,
+    this->get_clock(),
+    rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(control_send_period_)
+    )),
+    std::bind(&TrajTestNode::control_send_callback, this));
 }
 
 std::string TrajTestNode::get_px4_namespace(int drone_id)
@@ -184,13 +205,14 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_start_time_ = this->now();
   }
 
-  // TRAJ detected - capture current position and start trajectory tracking
+  // TRAJ detected - capture current position but WAIT before starting neural control
   if (state == FsmState::TRAJ && waiting_hover_ && !hover_started_) {
     hover_started_ = true;
     waiting_hover_ = false;
     hover_command_sent_ = false;
+    neural_control_ready_ = false;  // Reset - will be set to true after stabilization delay
     hover_start_time_ = this->now();
-    accumulated_elapsed_ = 0.0;
+    step_counter_ = 0;  // Reset step counter
     
     // Capture current position for hover
     hover_x_ = current_x_;
@@ -198,26 +220,18 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_z_ = current_z_;
     hover_yaw_ = 0.0;  // Face north
     
-    // Reset neural network policy (policy manages its own action-obs buffer)
-    if (use_neural_control_ && policy_) {
-      // Get initial observation to fill the buffer (must match training!)
-      std::vector<float> initial_obs = get_observation();
-      
-      // Normalize observation to [-1, 1] range (CRITICAL: must match training!)
-      normalize_observation(initial_obs);
-      
-      // Hovering action (normalized): [thrust≈0.42, omega_x=0, omega_y=0, omega_z=0]
-      // In training, hovering thrust is normalized to ~0.42 in [-1,1] range
-      // (which maps to 0.71 in [0,1] Gazebo range)
-      std::vector<float> hovering_action = {0.42f, 0.0f, 0.0f, 0.0f};
-      
-      policy_->reset(initial_obs, hovering_action);
-      RCLCPP_INFO(this->get_logger(), 
-                  "Neural network policy reset with normalized initial obs and hovering action");
+    // Set initial hover action (will be used during stabilization period)
+    {
+      std::lock_guard<std::mutex> lock(action_mutex_);
+      current_action_[0] = 2.0f * hover_thrust_ - 1.0f;  // Map [0,1] to [-1,1]
+      current_action_[1] = 0.0f;
+      current_action_[2] = 0.0f;
+      current_action_[3] = 0.0f;
     }
     
     RCLCPP_INFO(this->get_logger(),
-                "🚁 FSM entered TRAJ - Neural control active for %.1f s", hover_duration_);
+                "🚁 FSM entered TRAJ - Waiting %.2f s for mode stabilization...", 
+                mode_stabilization_delay_);
     RCLCPP_INFO(this->get_logger(),
                 "   Start pos: [%.2f, %.2f, %.2f] | Target: [%.2f, %.2f, %.2f]",
                 hover_x_, hover_y_, hover_z_, target_x_, target_y_, target_z_);
@@ -228,6 +242,7 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_started_ = false;
     waiting_hover_ = false;
     hover_command_sent_ = false;
+    neural_control_ready_ = false;
     RCLCPP_INFO(this->get_logger(),
                 "Left TRAJ state, resetting");
   }
@@ -291,7 +306,8 @@ void TrajTestNode::vehicle_rates_setpoint_callback(
   }
 }
 
-void TrajTestNode::timer_callback()
+// Action update callback (10Hz): Neural network inference
+void TrajTestNode::action_update_callback()
 {
   if (!odom_ready_) {
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
@@ -301,10 +317,11 @@ void TrajTestNode::timer_callback()
   
   // Only run in TRAJ state
   if (current_state_ == FsmState::TRAJ && hover_started_ && !hover_completed_) {
-    accumulated_elapsed_ += timer_period_;
+    // Calculate elapsed time from timestamp
+    double elapsed = (this->now() - hover_start_time_).seconds();
     
     // Check if TRAJ control duration is complete
-    if (accumulated_elapsed_ >= hover_duration_) {
+    if (elapsed >= hover_duration_) {
       RCLCPP_INFO(this->get_logger(), 
                   "✅ TRAJ control complete (%.1f s) - sending END_TRAJ command", hover_duration_);
       send_state_command(static_cast<int>(FsmState::END_TRAJ));
@@ -312,26 +329,103 @@ void TrajTestNode::timer_callback()
       return;
     }
     
-    // Publish control command
-    if (use_neural_control_ && local_position_ready_ && attitude_ready_) {
-      // Get action from neural network (policy handles action repeat internally)
-      publish_neural_control();
+    // Check if we need to wait for mode stabilization
+    if (!neural_control_ready_ && elapsed < mode_stabilization_delay_) {
+      // Still in stabilization period - send safe hover action
+      std::lock_guard<std::mutex> lock(action_mutex_);
+      current_action_[0] = 2.0f * hover_thrust_ - 1.0f;  // Map [0,1] to [-1,1]
+      current_action_[1] = 0.0f;
+      current_action_[2] = 0.0f;
+      current_action_[3] = 0.0f;
       
-      // Log current status (throttled)
-      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                           "Neural control | pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
-                           current_x_, current_y_, current_z_,
-                           current_vx_, current_vy_, current_vz_,
-                           accumulated_elapsed_, hover_duration_);
-    } else {
-      // Fallback to simple hover
-      publish_hover_setpoint();
-      
-      // Log current status (throttled)
-      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                           "Fallback hover control: thrust=%.3f | elapsed: %.1f/%.1f s",
-                           hover_thrust_, accumulated_elapsed_, hover_duration_);
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500,
+                           "⏳ Mode stabilization: %.2f/%.2f s - sending hover thrust",
+                           elapsed, mode_stabilization_delay_);
+      return;
     }
+    
+    // Initialize neural control after stabilization delay
+    if (!neural_control_ready_ && elapsed >= mode_stabilization_delay_) {
+      if (use_neural_control_ && policy_ && local_position_ready_ && attitude_ready_) {
+        RCLCPP_INFO(this->get_logger(),
+                    "✅ Mode stabilized (%.2f s) - Initializing neural control...",
+                    elapsed);
+        
+        // Get initial observation to fill the buffer (must match training!)
+        std::vector<float> initial_obs = get_observation();
+        
+        // Normalize observation to [-1, 1] range (CRITICAL: must match training!)
+        normalize_observation(initial_obs);
+        
+        // Hovering action (normalized): [thrust≈0.42, omega_x=0, omega_y=0, omega_z=0]
+        // In training, hovering thrust is normalized to ~0.42 in [-1,1] range
+        // (which maps to 0.71 in [0,1] Gazebo range)
+        std::vector<float> hovering_action = {0.581f, 0.0f, 0.0f, 0.0f};
+        
+        policy_->reset(initial_obs, hovering_action);
+        
+        // Immediately run inference to get first action
+        std::vector<float> first_action = policy_->get_action(initial_obs);
+        
+        // Update current_action_ immediately (thread-safe)
+        {
+          std::lock_guard<std::mutex> lock(action_mutex_);
+          current_action_ = first_action;
+        }
+        
+        neural_control_ready_ = true;
+        RCLCPP_INFO(this->get_logger(), 
+                    "🚀 Neural control active! (effective duration: %.1f s)",
+                    hover_duration_ - elapsed);
+      } else {
+        // Fallback mode
+        neural_control_ready_ = true;
+        RCLCPP_WARN(this->get_logger(),
+                    "Neural control not available - using fallback hover");
+      }
+      return;
+    }
+    
+    // Neural control is ready - update action from neural network or use fallback
+    if (neural_control_ready_) {
+      if (use_neural_control_ && local_position_ready_ && attitude_ready_) {
+        update_neural_action();
+        
+        // Log current status (throttled)
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                             "Neural control | pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
+                             current_x_, current_y_, current_z_,
+                             current_vx_, current_vy_, current_vz_,
+                             elapsed, hover_duration_);
+      } else {
+        // Fallback: Set hover action
+        std::lock_guard<std::mutex> lock(action_mutex_);
+        // Hover action: [hover_thrust in [-1,1] range, zero angular rates]
+        current_action_[0] = 2.0f * hover_thrust_ - 1.0f;  // Map [0,1] to [-1,1]
+        current_action_[1] = 0.0f;
+        current_action_[2] = 0.0f;
+        current_action_[3] = 0.0f;
+        
+        // Log current status (throttled)
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                             "Fallback hover control: thrust=%.3f | elapsed: %.1f/%.1f s",
+                             hover_thrust_, elapsed, hover_duration_);
+      }
+    }
+  }
+}
+
+// Control send callback (100Hz): High-frequency command transmission
+void TrajTestNode::control_send_callback()
+{
+  if (!odom_ready_) {
+    return;
+  }
+  
+  // Only run in TRAJ state
+  if (current_state_ == FsmState::TRAJ && hover_started_ && !hover_completed_) {
+    // Publish current action at high frequency
+    publish_current_action();
   }
 }
 
@@ -398,37 +492,104 @@ std::vector<float> TrajTestNode::get_observation()
   return obs;
 }
 
-// Publish neural network control command
-void TrajTestNode::publish_neural_control()
+// Update neural network action (called at 10Hz)
+void TrajTestNode::update_neural_action()
 {
-  // Get current observation (9D)
-  std::vector<float> obs = get_observation();
+  // Increment step counter
+  step_counter_++;
+  
+  // Get current observation (9D) - RAW (before normalization)
+  std::vector<float> obs_raw = get_observation();
+  
+  // Make a copy for normalization
+  std::vector<float> obs_normalized = obs_raw;
   
   // Normalize observation to [-1, 1] range (CRITICAL: must match training!)
-  normalize_observation(obs);
+  normalize_observation(obs_normalized);
   
-  // Get action from neural network (policy manages buffer and action repeat internally)
-  // Note: policy internally repeats action every 10 steps (0.1s at 100Hz)
-  std::vector<float> action = policy_->get_action(obs);
-  bool is_new_inference = policy_->is_new_inference();
+  // Get action from neural network
+  // Note: With separate 10Hz timer, we don't need internal action repeat anymore
+  std::vector<float> action = policy_->get_action(obs_normalized);
+  
+  // Update current action (thread-safe)
+  {
+    std::lock_guard<std::mutex> lock(action_mutex_);
+    current_action_ = action;
+  }
+  
+  // Calculate elapsed time
+  double elapsed = (this->now() - hover_start_time_).seconds();
+  
+  // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
+  
+  // 1. 步序号
+  RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
+  RCLCPP_INFO(this->get_logger(), "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
+  
+  // 2. 原始观测（未归一化）
+  RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
+              obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
+              obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
+              obs_raw[6], obs_raw[7], obs_raw[8]);   // target_pos_body
+  
+  // 3. 归一化后的观测（输入给神经网络的）
+  RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
+              obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
+              obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
+              obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_pos_body
+  
+  // 4. 网络原始输出（[-1, 1]范围的tanh输出）
+  float thrust_raw = action[0];
+  float omega_x_norm = action[1];
+  float omega_y_norm = action[2];
+  float omega_z_norm = action[3];
+  
+  RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
+              thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
+  
+  // 5. 归一化后输出（denormalized到物理量）
+  constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
+  constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
+  constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
+  float roll_rate = omega_x_norm * OMEGA_MAX_X;
+  float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
+  float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
+  float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
+  
+  RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
+              thrust_normalized, roll_rate, pitch_rate, yaw_rate);
+  
+  RCLCPP_INFO(this->get_logger(), "=====================================");
+}
+
+// Publish current action (called at 100Hz)
+void TrajTestNode::publish_current_action()
+{
+  // Read current action (thread-safe)
+  std::vector<float> action;
+  {
+    std::lock_guard<std::mutex> lock(action_mutex_);
+    action = current_action_;
+  }
   
   // Create body rate setpoint message
-  // Note: OffboardControlMode is managed by offboard_state_machine
   px4_msgs::msg::VehicleRatesSetpoint msg;
   
-  // Action output from NN: [thrust, omega_x, omega_y, omega_z]
+  // Action output: [thrust, omega_x, omega_y, omega_z]
   // All in range [-1, 1] from tanh activation
-  // Note: omega_x=roll_rate, omega_y=pitch_rate, omega_z=yaw_rate
+  float thrust_raw = action[0];
+  float omega_x_norm = action[1];
+  float omega_y_norm = action[2];
+  float omega_z_norm = action[3];
   
-  float thrust_raw = action[0];      // Thrust (tanh output)
-  float omega_x = action[1];         // Roll rate (body x-axis)
-  float omega_y = action[2];         // Pitch rate (body y-axis)
-  float omega_z = action[3];         // Yaw rate (body z-axis)
+  // Denormalize angular rates: [-1, 1] -> [-omega_max, omega_max]
+  constexpr float OMEGA_MAX_X = 0.5f;  // Roll rate max [rad/s]
+  constexpr float OMEGA_MAX_Y = 0.5f;  // Pitch rate max [rad/s]
+  constexpr float OMEGA_MAX_Z = 0.5f;  // Yaw rate max [rad/s]
   
-  // Set body rates (these are already in rad/s from the network)
-  msg.roll = omega_x;    // Roll rate [rad/s]
-  msg.pitch = omega_y;   // Pitch rate [rad/s]
-  msg.yaw = omega_z;     // Yaw rate [rad/s]
+  msg.roll = omega_x_norm * OMEGA_MAX_X;
+  msg.pitch = omega_y_norm * OMEGA_MAX_Y;
+  msg.yaw = omega_z_norm * OMEGA_MAX_Z;
   
   // Thrust mapping: [-1, 1] -> [0, 1]
   float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;
@@ -437,34 +598,24 @@ void TrajTestNode::publish_neural_control()
   msg.thrust_body[2] = -thrust_normalized;  // Negative for upward thrust in NED
   
   // Timestamp
-  // msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
-  msg.timestamp = 0;
+  msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
+  
+  // Calculate elapsed time from timestamp
+  double elapsed = (this->now() - hover_start_time_).seconds();
+  
+  // Debug: Print control commands in the first 0.5 seconds
+  if (elapsed < 0.5) {
+    RCLCPP_INFO(this->get_logger(),
+                "[t=%.3fs] [PUBLISH@100Hz] thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s, "
+                "thrust_body=[%.3f, %.3f, %.3f]",
+                elapsed,
+                thrust_normalized, thrust_raw,
+                msg.roll, msg.pitch, msg.yaw,
+                msg.thrust_body[0], msg.thrust_body[1], msg.thrust_body[2]);
+  }
   
   // Publish
   rates_pub_->publish(msg);
-  
-  // Debug: Log neural network output
-  // Print every frame in the first 0.5 seconds
-  if (accumulated_elapsed_ < 0.5) {
-    RCLCPP_INFO(this->get_logger(),
-                "[t=%.3fs] %s thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s",
-                accumulated_elapsed_,
-                is_new_inference ? "NEW" : "REPEAT",
-                thrust_normalized, thrust_raw, omega_x, omega_y, omega_z);
-  } else {
-    // After 0.5s, show whether this is a new inference or repeated action
-    if (is_new_inference) {
-      // Print every new inference (no throttle)
-      RCLCPP_INFO(this->get_logger(),
-                  "[NEW NN OUTPUT] thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s",
-                  thrust_normalized, thrust_raw, omega_x, omega_y, omega_z);
-    } else {
-      // Log repeated actions at DEBUG level to reduce clutter
-      RCLCPP_DEBUG(this->get_logger(),
-                   "[REPEAT] thrust=%.3f, rates=[%.3f, %.3f, %.3f] rad/s",
-                   thrust_normalized, omega_x, omega_y, omega_z);
-    }
-  }
 }
 
 // Publish hover setpoint using body rate control (zero angular velocity + hover thrust)
@@ -485,17 +636,20 @@ void TrajTestNode::publish_hover_setpoint()
   msg.thrust_body[2] = static_cast<float>(-hover_thrust_);  // Down thrust (negative = upward)
   
   // Timestamp
-  // msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
-  msg.timestamp = 0;
+  msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
+  // msg.timestamp = 0;
   
   // Publish
   rates_pub_->publish(msg);
   
+  // Calculate elapsed time from timestamp
+  double elapsed = (this->now() - hover_start_time_).seconds();
+  
   // Debug: Print every frame in the first 0.5 seconds
-  if (accumulated_elapsed_ < 0.5) {
+  if (elapsed < 0.5) {
     RCLCPP_INFO(this->get_logger(),
                 "[t=%.3fs] FALLBACK thrust=%.3f, rates=[0.0, 0.0, 0.0] rad/s",
-                accumulated_elapsed_, hover_thrust_);
+                elapsed, hover_thrust_);
   }
 }
 

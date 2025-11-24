@@ -23,7 +23,10 @@ def generate_launch_description():
             executable='offboard_fsm_node',
             name=f'offboard_fsm_node_{i}',
             output='screen',
-            parameters=[{'drone_id': LaunchConfiguration(f'drone_id_{i}')}],
+            parameters=[{
+                'drone_id': LaunchConfiguration(f'drone_id_{i}'),
+                'use_sim_time': True
+            }],
             remappings=[
                 (f'/state/command_drone_{i}', f'/state/command_drone_{i}'),
                 (f'/state/state_drone_{i}',   f'/state/state_drone_{i}')

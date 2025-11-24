@@ -54,6 +54,7 @@ def launch_setup(context, *args, **kwargs):
                     "goto_y":   float(drone_pos_NED[i, 1]),
                     "goto_z":   float(drone_pos_NED[i, 2]),
                     "num_drones": num_drones,
+                    "use_sim_time": True,
                 }],
                 # keep default remappings – the FSM already builds its own namespace
             )

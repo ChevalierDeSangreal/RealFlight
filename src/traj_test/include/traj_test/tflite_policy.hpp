@@ -17,7 +17,6 @@ constexpr int BUFFER_SIZE = 10;        // 动作-状态缓冲区大小
 constexpr int ACTION_DIM = 4;          // 动作维度（四旋翼控制指令）
 constexpr int OBS_DIM = 9;             // 观测维度（机体系速度3 + 机体系重力3 + 机体系目标位置3）
 constexpr int INPUT_DIM = BUFFER_SIZE * (ACTION_DIM + OBS_DIM);  // 总输入维度 = 10*(4+9) = 130
-constexpr int ACTION_REPEAT = 10;      // 动作重复次数
 
 /**
  * 动作-状态缓冲区类
@@ -94,7 +93,6 @@ class TFLitePolicyInference {
 public:
     TFLitePolicyInference(const std::string& model_path)
         : buffer_(BUFFER_SIZE, OBS_DIM, ACTION_DIM), 
-          step_counter_(0),
           last_action_(ACTION_DIM, 0.0f),
           initialized_(false),
           is_new_inference_(false) {
@@ -128,42 +126,32 @@ public:
     }
     
     /**
-     * 获取动作（考虑动作重复）
+     * 获取动作
      * @param obs 当前观测
      * @return 控制动作
      * 
      * 注意：逻辑必须与训练代码 bptt.py 一致！
      * 训练时的步骤：
-     * 1. 需要新动作时：先用【空动作+新观测】更新buffer → 推理 → 用【新动作+新观测】更新buffer
-     * 2. 不需要新动作时：buffer和动作都不变
+     * 先用【空动作+新观测】更新buffer → 推理 → 用【新动作+新观测】更新buffer
      */
     std::vector<float> get_action(const std::vector<float>& obs) {
         if (!initialized_) {
             return std::vector<float>(ACTION_DIM, 0.0f);
         }
         
-        // 每ACTION_REPEAT步才计算新动作
-        if (step_counter_ % ACTION_REPEAT == 0) {
-            // 步骤1：先用【空动作 + 新观测】临时更新buffer（用于推理）
-            // 这与训练代码一致：先用empty_action + obs更新buffer再推理
-            std::vector<float> empty_action(ACTION_DIM, 0.0f);
-            buffer_.update(obs, empty_action);
-            
-            // 步骤2：用临时buffer获取新动作（推理）
-            last_action_ = compute_action();  // compute_action内部使用buffer
-            
-            // 步骤3：用【新动作 + 新观测】更新buffer（真正保存）
-            // 替换刚才的empty_action为真实action
-            buffer_.update_last(last_action_);
-            
-            is_new_inference_ = true;  // 标记为新推理
-        } else {
-            // 不需要新动作：buffer和动作都不变（与训练代码一致）
-            is_new_inference_ = false;  // 标记为重复动作
-            // 注意：这里不更新buffer！与训练代码一致
-        }
+        // 步骤1：先用【空动作 + 新观测】临时更新buffer（用于推理）
+        // 这与训练代码一致：先用empty_action + obs更新buffer再推理
+        std::vector<float> empty_action(ACTION_DIM, 0.0f);
+        buffer_.update(obs, empty_action);
         
-        step_counter_++;
+        // 步骤2：用临时buffer获取新动作（推理）
+        last_action_ = compute_action();  // compute_action内部使用buffer
+        
+        // 步骤3：用【新动作 + 新观测】更新buffer（真正保存）
+        // 替换刚才的empty_action为真实action
+        buffer_.update_last(last_action_);
+        
+        is_new_inference_ = true;  // 标记为新推理
         
         return last_action_;
     }
@@ -193,7 +181,6 @@ public:
             buffer_.update(initial_obs, hovering_action);
         }
         
-        step_counter_ = 0;
         last_action_ = hovering_action;  // 初始动作设为悬停动作
         is_new_inference_ = false;
     }
@@ -265,7 +252,6 @@ private:
     std::unique_ptr<tflite::FlatBufferModel> model_;
     std::unique_ptr<tflite::Interpreter> interpreter_;
     ActionObsBuffer buffer_;
-    int step_counter_;
     std::vector<float> last_action_;
     bool initialized_;
     bool is_new_inference_;  // 标记上次get_action是否进行了新推理

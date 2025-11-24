@@ -30,7 +30,7 @@ def generate_launch_description():
         default_value=PathJoinSubstitution([
             FindPackageShare('traj_test'),
             'config',
-            'trackVer8_policy_stable.tflite'
+            'trackVer8_policy_stabler.tflite'
         ]),
         description='Path to the TFLite model file'
     )
@@ -51,6 +51,7 @@ def generate_launch_description():
             {
                 'drone_id': drone_id,
                 'model_path': model_path,
+                'use_sim_time': True,
             }
         ],
         output='screen',
