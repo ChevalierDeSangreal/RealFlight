@@ -6,7 +6,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    """Launch trajectory test node with neural network control for a single drone."""
+    """Launch hover test node with neural network control for a single drone."""
     
     # Declare launch arguments
     drone_id_arg = DeclareLaunchArgument(
@@ -18,7 +18,7 @@ def generate_launch_description():
     config_file_arg = DeclareLaunchArgument(
         'config_file',
         default_value=PathJoinSubstitution([
-            FindPackageShare('traj_test'),
+            FindPackageShare('hover_test'),
             'config',
             'tflite_model.yaml'
         ]),
@@ -28,9 +28,9 @@ def generate_launch_description():
     model_path_arg = DeclareLaunchArgument(
         'model_path',
         default_value=PathJoinSubstitution([
-            FindPackageShare('traj_test'),
+            FindPackageShare('hover_test'),
             'config',
-            'trackVer9_policy.tflite'
+            'hoverVer0_policy.tflite'
         ]),
         description='Path to the TFLite model file'
     )
@@ -40,11 +40,11 @@ def generate_launch_description():
     config_file = LaunchConfiguration('config_file')
     model_path = LaunchConfiguration('model_path')
     
-    # Trajectory test node with neural network control
-    traj_test_node = Node(
-        package='traj_test',
-        executable='traj_test_node',
-        name=['traj_test_node_', drone_id],
+    # Hover test node with neural network control
+    hover_test_node = Node(
+        package='hover_test',
+        executable='hover_test_node',
+        name=['hover_test_node_', drone_id],
         namespace='',
         parameters=[
             config_file,
@@ -63,6 +63,6 @@ def generate_launch_description():
         drone_id_arg,
         config_file_arg,
         model_path_arg,
-        traj_test_node,
+        hover_test_node,
     ])
 

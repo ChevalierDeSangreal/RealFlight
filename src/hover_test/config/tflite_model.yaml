@@ -1,0 +1,36 @@
+# TFLite Neural Network Model Configuration for Hover Test
+# This configuration file specifies the neural network model and control parameters
+
+/**:
+  ros__parameters:
+    # Neural network control
+    use_neural_control: true
+    
+    # Model path (relative to package share directory or absolute path)
+    # You may need to adjust this path based on your installation
+    model_path: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer0_policy.tflite"
+    
+    # Control timing
+    timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)
+    hover_duration: 10.0  # Duration to run hover control [seconds]
+    
+    # Fallback hover parameters (used if neural control fails)
+    hover_thrust: 0.251  # Normalized thrust for hovering [0.0-1.0]
+
+    # Target point position (in NED frame, meters)
+    # The neural network will control the drone to hover at this target point
+    target_x: 2.01  # Target X position
+    target_y: 0.0   # Target Y position
+    target_z: -1.21  # Target Z position (NED: negative = above ground)
+    
+# Notes:
+# - The model expects observations at 100 Hz (dt=0.01s)
+# - Action repeat (10 steps) is handled internally in the TFLitePolicyInference class
+# - Model input: 130D = 10 history steps × (4 action dims + 9 obs dims) per step
+#   - Buffer format: [action_t-9, obs_t-9, action_t-8, obs_t-8, ..., action_t, obs_t]
+# - Model output: 4D [thrust, omega_x, omega_y, omega_z]
+# - All outputs are in range [-1, 1] due to tanh activation
+# - Observation space (9D, body frame):
+#   - Body velocity (3), Body gravity direction (3), Distance to target point in body frame (3)
+
+
