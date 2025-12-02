@@ -359,10 +359,10 @@ void TrajTestNode::action_update_callback()
         // Normalize observation to [-1, 1] range (CRITICAL: must match training!)
         normalize_observation(initial_obs);
         
-        // Hovering action (normalized): [thrust≈0.42, omega_x=0, omega_y=0, omega_z=0]
-        // In training, hovering thrust is normalized to ~0.42 in [-1,1] range
-        // (which maps to 0.71 in [0,1] Gazebo range)
-        std::vector<float> hovering_action = {0.581f, 0.0f, 0.0f, 0.0f};
+        // Hovering action (normalized): [thrust, omega_x=0, omega_y=0, omega_z=0]
+        // Map hover_thrust_ from [0,1] to [-1,1] range for neural network input
+        float hovering_thrust_normalized = 2.0f * hover_thrust_ - 1.0f;
+        std::vector<float> hovering_action = {hovering_thrust_normalized, 0.0f, 0.0f, 0.0f};
         
         policy_->reset(initial_obs, hovering_action);
         

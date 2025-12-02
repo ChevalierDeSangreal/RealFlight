@@ -8,15 +8,15 @@
     
     # Model path (relative to package share directory or absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/carlson/wangzimo/realflight_ws/src/traj_test/config/trackVer9_policy.tflite"
+    model_path: "/home/carlson/wangzimo/realflight_ws/src/traj_test/config/trackVer8_policy_stabler.tflite"
     
     # Control timing
     timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)
     hover_duration: 10.0  # Duration to run trajectory control [seconds] (+ 1s wait = 4s total)
     
     # Fallback hover parameters (used if neural control fails)
-    # hover_thrust: 0.71  # Normalized thrust for hovering [0.0-1.0]
-    hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
+    hover_thrust: 0.71  # Normalized thrust for hovering [0.0-1.0]
+    # hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
 
     # Target position/trajectory (in NED frame, meters)
     # Target is 1m in front of drone at GOTO position [-1.5, 0.0, -1.5]
