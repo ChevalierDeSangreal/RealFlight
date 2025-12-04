@@ -63,6 +63,9 @@ TrajTestNode::TrajTestNode(int drone_id)
   , target_vx_(0.0)
   , target_vy_(0.0)
   , target_vz_(0.0)
+  , initial_target_x_(0.0)
+  , initial_target_y_(0.0)
+  , initial_target_z_(0.0)
   , use_neural_control_(false)
   , current_action_(4, 0.0f)  // Initialize with zero action [thrust, omega_x, omega_y, omega_z]
   , step_counter_(0)           // Initialize step counter
@@ -78,6 +81,9 @@ TrajTestNode::TrajTestNode(int drone_id)
   target_x_         = this->declare_parameter("target_x", 0.0);
   target_y_         = this->declare_parameter("target_y", 0.0);
   target_z_         = this->declare_parameter("target_z", 2.0);
+  target_vx_        = this->declare_parameter("target_vx", 0.0);
+  target_vy_        = this->declare_parameter("target_vy", 0.0);
+  target_vz_        = this->declare_parameter("target_vz", 0.0);
   
   // PX4 namespace
   px4_namespace_ = get_px4_namespace(drone_id_);
@@ -97,7 +103,9 @@ TrajTestNode::TrajTestNode(int drone_id)
   RCLCPP_INFO(this->get_logger(),
               "  - Control send period: %.3f s (%.1f Hz)", control_send_period_, 1.0/control_send_period_);
   RCLCPP_INFO(this->get_logger(),
-              "  - Target: [%.2f, %.2f, %.2f]", target_x_, target_y_, target_z_);
+              "  - Target initial position: [%.2f, %.2f, %.2f]", target_x_, target_y_, target_z_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Target velocity: [%.2f, %.2f, %.2f] m/s", target_vx_, target_vy_, target_vz_);
   RCLCPP_INFO(this->get_logger(), 
               "  - PX4 namespace: %s", px4_namespace_.c_str());
   
@@ -222,6 +230,11 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_z_ = current_z_;
     hover_yaw_ = 0.0;  // Face north
     
+    // Save initial target position for moving target
+    initial_target_x_ = target_x_;
+    initial_target_y_ = target_y_;
+    initial_target_z_ = target_z_;
+    
     // Set initial hover action (will be used during stabilization period)
     {
       std::lock_guard<std::mutex> lock(action_mutex_);
@@ -321,6 +334,11 @@ void TrajTestNode::action_update_callback()
   if (current_state_ == FsmState::TRAJ && hover_started_ && !hover_completed_) {
     // Calculate elapsed time from timestamp
     double elapsed = (this->now() - hover_start_time_).seconds();
+    
+    // Update moving target position based on velocity
+    target_x_ = initial_target_x_ + target_vx_ * elapsed;
+    target_y_ = initial_target_y_ + target_vy_ * elapsed;
+    target_z_ = initial_target_z_ + target_vz_ * elapsed;
     
     // Check if TRAJ control duration is complete
     if (elapsed >= hover_duration_) {
@@ -488,9 +506,10 @@ void TrajTestNode::action_update_callback()
         
         // Log current status (throttled)
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                             "Neural control | pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
+                             "Neural control | pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] | target=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
                              current_x_, current_y_, current_z_,
                              current_vx_, current_vy_, current_vz_,
+                             target_x_, target_y_, target_z_,
                              elapsed, hover_duration_);
       } else {
         // Fallback: Set hover action
@@ -503,8 +522,8 @@ void TrajTestNode::action_update_callback()
         
         // Log current status (throttled)
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                             "Fallback hover control: thrust=%.3f | elapsed: %.1f/%.1f s",
-                             hover_thrust_, elapsed, hover_duration_);
+                             "Fallback hover control: thrust=%.3f | target=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
+                             hover_thrust_, target_x_, target_y_, target_z_, elapsed, hover_duration_);
       }
     }
   }

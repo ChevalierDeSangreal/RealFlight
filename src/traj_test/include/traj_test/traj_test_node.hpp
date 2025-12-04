@@ -113,6 +113,9 @@ private:
   double target_vx_;
   double target_vy_;
   double target_vz_;
+  double initial_target_x_;  // Initial target position for moving target
+  double initial_target_y_;
+  double initial_target_z_;
   
   // Neural network policy
   std::unique_ptr<TFLitePolicyInference> policy_;

@@ -15,8 +15,8 @@
     hover_duration: 10.0  # Duration to run trajectory control [seconds] (+ 1s wait = 4s total)
     
     # Fallback hover parameters (used if neural control fails)
-    hover_thrust: 0.71  # Normalized thrust for hovering [0.0-1.0]
-    # hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
+    # hover_thrust: 0.541  # Normalized thrust for hovering [0.0-1.0]
+    hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
 
     # Target position/trajectory (in NED frame, meters)
     # Target is 1m in front of drone at GOTO position [-1.5, 0.0, -1.5]
