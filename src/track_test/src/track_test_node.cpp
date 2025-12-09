@@ -165,7 +165,7 @@ TrackTestNode::TrackTestNode(int drone_id)
     rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(timer_period_)
     )),
-    std::bind(&TrajTestNode::timer_callback, this));
+    std::bind(&TrackTestNode::timer_callback, this));
     
     RCLCPP_INFO(this->get_logger(), "Timer initialized at %.0f Hz", 1.0/timer_period_);
 }

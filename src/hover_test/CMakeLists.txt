@@ -13,15 +13,15 @@ find_package(px4_msgs REQUIRED)
 find_package(offboard_state_machine REQUIRED)
 
 # TensorFlow Lite
-# Using local installation in third_party directory
-set(TFLITE_ROOT "$ENV{HOME}/wangzimo/third_party/tensorflow_lite" CACHE PATH "TensorFlow Lite root directory")
-set(TFLITE_INCLUDE_DIR "${TFLITE_ROOT}/include" CACHE PATH "TensorFlow Lite include directory")
-set(TFLITE_LIB_DIR "${TFLITE_ROOT}/lib" CACHE PATH "TensorFlow Lite library directory")
+# Using local installation from Downloads/tensorflow/tflite_build
+set(TFLITE_BUILD_DIR "$ENV{HOME}/Downloads/tensorflow/tflite_build" CACHE PATH "TensorFlow Lite build directory")
+set(TFLITE_INCLUDE_DIR "$ENV{HOME}/Downloads/tensorflow" CACHE PATH "TensorFlow Lite include directory")
+set(TFLITE_LIB_DIR "${TFLITE_BUILD_DIR}" CACHE PATH "TensorFlow Lite library directory")
 
 # Check if TFLite is properly installed
 if(NOT EXISTS ${TFLITE_INCLUDE_DIR}/tensorflow/lite)
     message(FATAL_ERROR "TFLite include directory not found: ${TFLITE_INCLUDE_DIR}/tensorflow/lite\n"
-                        "Please ensure TensorFlow Lite is installed at: ${TFLITE_ROOT}")
+                        "Please ensure TensorFlow Lite is available at: ${TFLITE_INCLUDE_DIR}")
 endif()
 
 if(NOT EXISTS ${TFLITE_LIB_DIR}/libtensorflow-lite.a)
@@ -49,57 +49,27 @@ ament_target_dependencies(hover_test_node
   offboard_state_machine
 )
 
-# Collect all Abseil libraries
-file(GLOB ABSL_LIBS "${TFLITE_LIB_DIR}/libabsl_*.a")
+# Collect all necessary TFLite dependencies
+file(GLOB ABSL_LIBS "${TFLITE_BUILD_DIR}/_deps/abseil-cpp-build/absl/*/*.a")
+file(GLOB RUY_LIBS "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/*.a")
 
 # Link TensorFlow Lite and its dependencies
-# Note: Order matters for static linking! Main library first, then dependencies
 target_link_libraries(hover_test_node
   ${TFLITE_LIB_DIR}/libtensorflow-lite.a
-  ${TFLITE_LIB_DIR}/libXNNPACK.a
-  ${TFLITE_LIB_DIR}/libruy_frontend.a
-  ${TFLITE_LIB_DIR}/libruy_ctx.a
-  ${TFLITE_LIB_DIR}/libruy_context.a
-  ${TFLITE_LIB_DIR}/libruy_context_get_ctx.a
-  ${TFLITE_LIB_DIR}/libruy_trmul.a
-  ${TFLITE_LIB_DIR}/libruy_prepare_packed_matrices.a
-  ${TFLITE_LIB_DIR}/libruy_pack_avx512.a
-  ${TFLITE_LIB_DIR}/libruy_pack_avx2_fma.a
-  ${TFLITE_LIB_DIR}/libruy_pack_avx.a
-  ${TFLITE_LIB_DIR}/libruy_pack_arm.a
-  ${TFLITE_LIB_DIR}/libruy_kernel_avx512.a
-  ${TFLITE_LIB_DIR}/libruy_kernel_avx2_fma.a
-  ${TFLITE_LIB_DIR}/libruy_kernel_avx.a
-  ${TFLITE_LIB_DIR}/libruy_kernel_arm.a
-  ${TFLITE_LIB_DIR}/libruy_thread_pool.a
-  ${TFLITE_LIB_DIR}/libruy_blocking_counter.a
-  ${TFLITE_LIB_DIR}/libruy_wait.a
-  ${TFLITE_LIB_DIR}/libruy_allocator.a
-  ${TFLITE_LIB_DIR}/libruy_apply_multiplier.a
-  ${TFLITE_LIB_DIR}/libruy_block_map.a
-  ${TFLITE_LIB_DIR}/libruy_cpuinfo.a
-  ${TFLITE_LIB_DIR}/libruy_denormal.a
-  ${TFLITE_LIB_DIR}/libruy_have_built_path_for_avx512.a
-  ${TFLITE_LIB_DIR}/libruy_have_built_path_for_avx2_fma.a
-  ${TFLITE_LIB_DIR}/libruy_have_built_path_for_avx.a
-  ${TFLITE_LIB_DIR}/libruy_prepacked_cache.a
-  ${TFLITE_LIB_DIR}/libruy_profiler_instrumentation.a
-  ${TFLITE_LIB_DIR}/libruy_profiler_profiler.a
-  ${TFLITE_LIB_DIR}/libruy_system_aligned_alloc.a
-  ${TFLITE_LIB_DIR}/libruy_tune.a
-  ${TFLITE_LIB_DIR}/libflatbuffers.a
-  ${TFLITE_LIB_DIR}/libeight_bit_int_gemm.a
-  ${TFLITE_LIB_DIR}/libfft2d_fftsg.a
-  ${TFLITE_LIB_DIR}/libfft2d_fftsg2d.a
-  ${TFLITE_LIB_DIR}/libcpuinfo.a
-  ${TFLITE_LIB_DIR}/libpthreadpool.a
-  ${TFLITE_LIB_DIR}/libfarmhash.a
+  ${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a
+  ${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a
+  ${TFLITE_BUILD_DIR}/pthreadpool/libpthreadpool.a
+  ${TFLITE_BUILD_DIR}/_deps/cpuinfo-build/libcpuinfo.a
+  ${TFLITE_BUILD_DIR}/_deps/farmhash-build/libfarmhash.a
+  ${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg.a
+  ${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg2d.a
+  -Wl,--start-group
+  ${RUY_LIBS}
+  ${ABSL_LIBS}
+  -Wl,--end-group
   ${CMAKE_DL_LIBS}
   pthread
   m  # Math library
-  -Wl,--start-group
-  ${ABSL_LIBS}
-  -Wl,--end-group
 )
 
 install(DIRECTORY include/

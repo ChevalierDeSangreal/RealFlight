@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 # ---------- build target ----------
@@ -18,14 +19,16 @@ target_compile_features(offboard_fsm_node PUBLIC cxx_std_17)
 target_include_directories(offboard_fsm_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${EIGEN3_INCLUDE_DIRS}
 )
 
 ament_target_dependencies(offboard_fsm_node
   rclcpp
   std_msgs
   px4_msgs
-  Eigen3
+)
+
+target_link_libraries(offboard_fsm_node
+  Eigen3::Eigen
 )
 
 # ---------- install ----------
