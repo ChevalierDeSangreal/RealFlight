@@ -31,6 +31,7 @@ ros2 launch offboard_state_machine single_drone_test.launch.py
 
 ros2 launch traj_test tflite_neural_control.launch.py
 ros2 launch hover_test tflite_neural_control.launch.py
+ros2 launch hover_test tflite_neural_control_50hz.launch.py
 
 ros2 launch traj_test tflite_neural_control.launch.py > /home/carlson/wangzimo/tmplog.txt 2>&1
 ros2 launch hover_test tflite_neural_control.launch.py > /home/carlson/wangzimo/tmplog.txt 2>&1
