@@ -1,5 +1,7 @@
 
 ## 运行：
+0. 设置ROS DOMAIN
+export ROS_DOMAIN_ID=86
 
 1. 启动IsaacSIm仿真+PX4
 
@@ -31,7 +33,7 @@ ros2 launch traj_test tflite_neural_control.launch.py
 ros2 launch hover_test tflite_neural_control.launch.py
 
 ros2 launch traj_test tflite_neural_control.launch.py > /home/carlson/wangzimo/tmplog.txt 2>&1
-
+ros2 launch hover_test tflite_neural_control.launch.py > /home/carlson/wangzimo/tmplog.txt 2>&1
 
 监视状态变换：
 
@@ -87,7 +89,7 @@ cd ~/wangzimo/realflight_ws
 colcon build --packages-select hover_test
 source install/setup.bash
 
-export ROS_DOMAIN_ID=86
+
 
 
 ros2 launch traj_test traj_test.launch.py drone_id:=0

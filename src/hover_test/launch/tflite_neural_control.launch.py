@@ -25,20 +25,9 @@ def generate_launch_description():
         description='Path to the TFLite model configuration YAML file'
     )
     
-    model_path_arg = DeclareLaunchArgument(
-        'model_path',
-        default_value=PathJoinSubstitution([
-            FindPackageShare('hover_test'),
-            'config',
-            'hoverVer0_policy.tflite'
-        ]),
-        description='Path to the TFLite model file'
-    )
-    
     # Get launch configurations
     drone_id = LaunchConfiguration('drone_id')
     config_file = LaunchConfiguration('config_file')
-    model_path = LaunchConfiguration('model_path')
     
     # Hover test node with neural network control
     hover_test_node = Node(
@@ -50,7 +39,6 @@ def generate_launch_description():
             config_file,
             {
                 'drone_id': drone_id,
-                'model_path': model_path,
                 'use_sim_time': True,
             }
         ],
@@ -62,7 +50,6 @@ def generate_launch_description():
     return LaunchDescription([
         drone_id_arg,
         config_file_arg,
-        model_path_arg,
         hover_test_node,
     ])
 
