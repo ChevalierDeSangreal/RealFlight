@@ -6,7 +6,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    """Launch hover test node with neural network control for a single drone."""
+    """Launch hover test node (50Hz) with neural network control for a single drone."""
     
     # Declare launch arguments
     drone_id_arg = DeclareLaunchArgument(
@@ -20,20 +20,20 @@ def generate_launch_description():
         default_value=PathJoinSubstitution([
             FindPackageShare('hover_test'),
             'config',
-            'tflite_model.yaml'
+            'tflite_model_50hz.yaml'
         ]),
-        description='Path to the TFLite model configuration YAML file'
+        description='Path to the TFLite model configuration YAML file for 50Hz control'
     )
     
     # Get launch configurations
     drone_id = LaunchConfiguration('drone_id')
     config_file = LaunchConfiguration('config_file')
     
-    # Hover test node with neural network control
-    hover_test_node = Node(
+    # Hover test node with neural network control (50Hz version)
+    hover_test_node_50hz = Node(
         package='hover_test',
-        executable='hover_test_node',
-        name=['hover_test_node_', drone_id],
+        executable='hover_test_node_50hz',
+        name=['hover_test_node_50hz_', drone_id],
         namespace='',
         parameters=[
             config_file,
@@ -50,6 +50,6 @@ def generate_launch_description():
     return LaunchDescription([
         drone_id_arg,
         config_file_arg,
-        hover_test_node,
+        hover_test_node_50hz,
     ])
 

@@ -1,4 +1,4 @@
-#include "hover_test/hover_test_node.hpp"
+#include "hover_test/hover_test_node_50hz.hpp"
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
@@ -29,8 +29,8 @@ namespace {
   }
 }
 
-HoverTestNode::HoverTestNode(int drone_id)
-  : Node("hover_test_node_" + std::to_string(drone_id))
+HoverTestNode50Hz::HoverTestNode50Hz(int drone_id)
+  : Node("hover_test_node_50hz_" + std::to_string(drone_id))
   , drone_id_(drone_id)
   , current_state_(FsmState::INIT)
   , waiting_hover_(false)
@@ -68,7 +68,7 @@ HoverTestNode::HoverTestNode(int drone_id)
   hover_duration_   = this->declare_parameter("hover_duration", 3.0);  // TRAJ control duration: 3.0s
   hover_thrust_     = this->declare_parameter("hover_thrust", 0.251);
   mode_stabilization_delay_ = this->declare_parameter("mode_stabilization_delay", 0.6);  // Wait 0.6s for mode switch
-  action_update_period_ = this->declare_parameter("action_update_period", 0.1);  // 10 Hz for NN inference
+  action_update_period_ = this->declare_parameter("action_update_period", 0.02);  // 50 Hz for NN inference
   control_send_period_  = this->declare_parameter("control_send_period", 0.01);  // 100 Hz for control commands
   use_neural_control_ = this->declare_parameter("use_neural_control", true);
   model_path_       = this->declare_parameter("model_path", "");
@@ -80,7 +80,7 @@ HoverTestNode::HoverTestNode(int drone_id)
   px4_namespace_ = get_px4_namespace(drone_id_);
   
   RCLCPP_INFO(this->get_logger(), 
-              "=== Hover Test Node for Drone %d (Neural Network Control) ===", drone_id_);
+              "=== Hover Test Node 50Hz for Drone %d (Neural Network Control) ===", drone_id_);
   RCLCPP_INFO(this->get_logger(),
               "Parameters:");
   RCLCPP_INFO(this->get_logger(),
@@ -105,7 +105,7 @@ HoverTestNode::HoverTestNode(int drone_id)
       use_neural_control_ = false;
     } else {
       RCLCPP_INFO(this->get_logger(), "  - Model path: %s", model_path_.c_str());
-      policy_ = std::make_unique<TFLitePolicyInference>(model_path_);
+      policy_ = std::make_unique<TFLitePolicyInference50Hz>(model_path_);
       if (!policy_->is_initialized()) {
         RCLCPP_ERROR(this->get_logger(), "Failed to initialize neural network policy!");
         use_neural_control_ = false;
@@ -131,33 +131,33 @@ HoverTestNode::HoverTestNode(int drone_id)
   state_sub_ = this->create_subscription<std_msgs::msg::Int32>(
     "/state/state_drone_" + std::to_string(drone_id_),
     rclcpp::QoS(10),
-    std::bind(&HoverTestNode::state_callback, this, std::placeholders::_1));
+    std::bind(&HoverTestNode50Hz::state_callback, this, std::placeholders::_1));
     
   // VehicleOdometry contains position, velocity, and attitude - no need for separate subscriptions!
   odom_sub_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
     px4_namespace_ + "out/vehicle_odometry",
     rclcpp::SensorDataQoS(),
-    std::bind(&HoverTestNode::odom_callback, this, std::placeholders::_1));
+    std::bind(&HoverTestNode50Hz::odom_callback, this, std::placeholders::_1));
   
   // Debug: Subscribe to PX4's actual vehicle rates setpoint output
   // This shows what PX4 is actually executing (after internal processing/limiting)
   rates_setpoint_sub_ = this->create_subscription<px4_msgs::msg::VehicleRatesSetpoint>(
     px4_namespace_ + "out/vehicle_rates_setpoint",
     rclcpp::SensorDataQoS(),
-    std::bind(&HoverTestNode::vehicle_rates_setpoint_callback, this, std::placeholders::_1));
+    std::bind(&HoverTestNode50Hz::vehicle_rates_setpoint_callback, this, std::placeholders::_1));
   
   // Two-timer architecture to avoid accumulated timing errors:
-  // 1. Action update timer (10Hz): Neural network inference
+  // 1. Action update timer (50Hz): Neural network inference
   // 2. Control send timer (100Hz): High-frequency command transmission
   
-  // Action update timer (10Hz for neural network inference)
+  // Action update timer (50Hz for neural network inference)
   action_update_timer_ = rclcpp::create_timer(
     this,
     this->get_clock(),
     rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(action_update_period_)
     )),
-    std::bind(&HoverTestNode::action_update_callback, this));
+    std::bind(&HoverTestNode50Hz::action_update_callback, this));
   
   // Control send timer (100Hz for sending control commands)
   control_send_timer_ = rclcpp::create_timer(
@@ -166,10 +166,10 @@ HoverTestNode::HoverTestNode(int drone_id)
     rclcpp::Duration(std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(control_send_period_)
     )),
-    std::bind(&HoverTestNode::control_send_callback, this));
+    std::bind(&HoverTestNode50Hz::control_send_callback, this));
 }
 
-std::string HoverTestNode::get_px4_namespace(int drone_id)
+std::string HoverTestNode50Hz::get_px4_namespace(int drone_id)
 {
   if (drone_id == 0) {
     return "/fmu/";
@@ -178,7 +178,7 @@ std::string HoverTestNode::get_px4_namespace(int drone_id)
   }
 }
 
-void HoverTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
+void HoverTestNode50Hz::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
 {
   auto state = static_cast<FsmState>(msg->data);
   
@@ -247,7 +247,7 @@ void HoverTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
   }
 }
 
-void HoverTestNode::odom_callback(
+void HoverTestNode50Hz::odom_callback(
   const px4_msgs::msg::VehicleOdometry::SharedPtr msg)
 {
   // Position
@@ -292,7 +292,7 @@ void HoverTestNode::odom_callback(
 
 
 // Debug callback: Monitor what PX4 is actually executing
-void HoverTestNode::vehicle_rates_setpoint_callback(
+void HoverTestNode50Hz::vehicle_rates_setpoint_callback(
   const px4_msgs::msg::VehicleRatesSetpoint::SharedPtr msg)
 {
   // Only log when in TRAJ state to avoid spam
@@ -305,8 +305,8 @@ void HoverTestNode::vehicle_rates_setpoint_callback(
   }
 }
 
-// Action update callback (10Hz): Neural network inference
-void HoverTestNode::action_update_callback()
+// Action update callback (50Hz): Neural network inference
+void HoverTestNode50Hz::action_update_callback()
 {
   if (!odom_ready_) {
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
@@ -360,53 +360,6 @@ void HoverTestNode::action_update_callback()
         std::vector<float> hovering_action = {hover_thrust_normalized, 0.0f, 0.0f, 0.0f};
         
         policy_->reset(initial_obs_for_reset, hovering_action);
-        
-        // // Print input buffer for step 0 (after reset, before first inference)
-        // if (policy_) {
-        //   std::vector<float> buffer_data = policy_->get_flattened_buffer();
-        //   RCLCPP_INFO(this->get_logger(), "");
-        //   RCLCPP_INFO(this->get_logger(), "========== STEP 0 INPUT BUFFER (130 dims) ==========");
-        //   RCLCPP_INFO(this->get_logger(), "Buffer size: %zu", buffer_data.size());
-          
-        //   // Print buffer in format: [action(4), obs(9)] * 10
-        //   constexpr int BUFFER_SIZE = 10;
-        //   constexpr int ACTION_DIM = 4;
-        //   constexpr int OBS_DIM = 9;
-        //   for (int i = 0; i < BUFFER_SIZE; ++i) {
-        //     int base_idx = i * (ACTION_DIM + OBS_DIM);
-        //     RCLCPP_INFO(this->get_logger(), 
-        //                 "  [Step %d] action=[%.6f, %.6f, %.6f, %.6f], obs=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f]",
-        //                 i,
-        //                 buffer_data[base_idx + 0], buffer_data[base_idx + 1], 
-        //                 buffer_data[base_idx + 2], buffer_data[base_idx + 3],  // action
-        //                 buffer_data[base_idx + 4], buffer_data[base_idx + 5], buffer_data[base_idx + 6],  // obs[0:3]
-        //                 buffer_data[base_idx + 7], buffer_data[base_idx + 8], buffer_data[base_idx + 9],  // obs[3:6]
-        //                 buffer_data[base_idx + 10], buffer_data[base_idx + 11], buffer_data[base_idx + 12]); // obs[6:9]
-        //   }
-          
-        //   // Print flattened buffer as single line (for easy copy-paste)
-        //   RCLCPP_INFO(this->get_logger(), "Flattened buffer (single line, 130 values):");
-        //   std::string buffer_str = "  [";
-        //   for (size_t i = 0; i < buffer_data.size(); ++i) {
-        //     char num_str[32];
-        //     snprintf(num_str, sizeof(num_str), "%.6f", buffer_data[i]);
-        //     buffer_str += num_str;
-        //     if (i < buffer_data.size() - 1) {
-        //       buffer_str += ", ";
-        //     }
-        //   }
-        //   buffer_str += "]";
-        //   // Split long string into multiple log lines for readability
-        //   const size_t max_line_length = 200;
-        //   size_t pos = 0;
-        //   while (pos < buffer_str.length()) {
-        //     size_t end_pos = std::min(pos + max_line_length, buffer_str.length());
-        //     std::string line = buffer_str.substr(pos, end_pos - pos);
-        //     RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
-        //     pos = end_pos;
-        //   }
-        //   RCLCPP_INFO(this->get_logger(), "===================================================");
-        // }
         
         // Get ACTUAL observation for first inference
         std::vector<float> obs_raw = get_observation();
@@ -488,7 +441,7 @@ void HoverTestNode::action_update_callback()
         
         // Log current status (throttled)
         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                             "Neural control | pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
+                             "Neural control (50Hz) | pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] | elapsed: %.1f/%.1f s",
                              current_x_, current_y_, current_z_,
                              current_vx_, current_vy_, current_vz_,
                              elapsed, hover_duration_);
@@ -511,7 +464,7 @@ void HoverTestNode::action_update_callback()
 }
 
 // Control send callback (100Hz): High-frequency command transmission
-void HoverTestNode::control_send_callback()
+void HoverTestNode50Hz::control_send_callback()
 {
   if (!odom_ready_) {
     return;
@@ -530,7 +483,7 @@ void HoverTestNode::control_send_callback()
 // 1. 机体系速度 (3) - quad velocity in body frame
 // 2. 机体系重力方向 (3) - gravity direction in body frame
 // 3. 机体系到目标点距离 (3) - distance to target point in body frame
-std::vector<float> HoverTestNode::get_observation()
+std::vector<float> HoverTestNode50Hz::get_observation()
 {
   std::vector<float> obs(OBS_DIM);
   
@@ -588,8 +541,8 @@ std::vector<float> HoverTestNode::get_observation()
   return obs;
 }
 
-// Update neural network action (called at 10Hz)
-void HoverTestNode::update_neural_action()
+// Update neural network action (called at 50Hz)
+void HoverTestNode50Hz::update_neural_action()
 {
   // Increment step counter
   step_counter_++;
@@ -604,7 +557,7 @@ void HoverTestNode::update_neural_action()
   normalize_observation(obs_normalized);
   
   // Get action from neural network
-  // Note: With separate 10Hz timer, we don't need internal action repeat anymore
+  // Note: With separate 50Hz timer, we don't need internal action repeat anymore
   std::vector<float> action = policy_->get_action(obs_normalized);
   
   // Update current action (thread-safe)
@@ -616,50 +569,50 @@ void HoverTestNode::update_neural_action()
   // Calculate elapsed time
   double elapsed = (this->now() - hover_start_time_).seconds();
   
-  // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
+  // // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
   
-  // 1. 步序号
-  RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
-  RCLCPP_INFO(this->get_logger(), "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
+  // // 1. 步序号
+  // RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
+  // RCLCPP_INFO(this->get_logger(), "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
   
-  // 2. 原始观测（未归一化）
-  RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
-              obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
-              obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
-              obs_raw[6], obs_raw[7], obs_raw[8]);   // target_distance_body
+  // // 2. 原始观测（未归一化）
+  // RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
+  //             obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
+  //             obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
+  //             obs_raw[6], obs_raw[7], obs_raw[8]);   // target_distance_body
   
-  // 3. 归一化后的观测（输入给神经网络的）
-  RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
-              obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
-              obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
-              obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_distance_body
+  // // 3. 归一化后的观测（输入给神经网络的）
+  // RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
+  //             obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
+  //             obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
+  //             obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_distance_body
   
-  // 4. 网络原始输出（[-1, 1]范围的tanh输出）
-  float thrust_raw = action[0];
-  float omega_x_norm = action[1];
-  float omega_y_norm = action[2];
-  float omega_z_norm = action[3];
+  // // 4. 网络原始输出（[-1, 1]范围的tanh输出）
+  // float thrust_raw = action[0];
+  // float omega_x_norm = action[1];
+  // float omega_y_norm = action[2];
+  // float omega_z_norm = action[3];
   
-  RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
-              thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
+  // RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
+  //             thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
   
-  // 5. 归一化后输出（denormalized到物理量）
-  constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
-  constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
-  constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
-  float roll_rate = omega_x_norm * OMEGA_MAX_X;
-  float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
-  float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
-  float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
+  // // 5. 归一化后输出（denormalized到物理量）
+  // constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
+  // constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
+  // constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
+  // float roll_rate = omega_x_norm * OMEGA_MAX_X;
+  // float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
+  // float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
+  // float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
   
-  RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
-              thrust_normalized, roll_rate, pitch_rate, yaw_rate);
+  // RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
+  //             thrust_normalized, roll_rate, pitch_rate, yaw_rate);
   
-  RCLCPP_INFO(this->get_logger(), "=====================================");
+  // RCLCPP_INFO(this->get_logger(), "=====================================");
 }
 
 // Publish current action (called at 100Hz)
-void HoverTestNode::publish_current_action()
+void HoverTestNode50Hz::publish_current_action()
 {
   // Read current action (thread-safe)
   std::vector<float> action;
@@ -696,26 +649,12 @@ void HoverTestNode::publish_current_action()
   // Timestamp
   msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
   
-  // // Calculate elapsed time from timestamp
-  // double elapsed = (this->now() - hover_start_time_).seconds();
-  
-  // // Debug: Print control commands in the first 0.5 seconds
-  // if (elapsed < 0.5) {
-  //   RCLCPP_INFO(this->get_logger(),
-  //               "[t=%.3fs] [PUBLISH@100Hz] thrust=%.3f(raw=%.3f), rates=[%.3f, %.3f, %.3f] rad/s, "
-  //               "thrust_body=[%.3f, %.3f, %.3f]",
-  //               elapsed,
-  //               thrust_normalized, thrust_raw,
-  //               msg.roll, msg.pitch, msg.yaw,
-  //               msg.thrust_body[0], msg.thrust_body[1], msg.thrust_body[2]);
-  // }
-  
   // Publish
   rates_pub_->publish(msg);
 }
 
 // Publish hover setpoint using body rate control (zero angular velocity + hover thrust)
-void HoverTestNode::publish_hover_setpoint()
+void HoverTestNode50Hz::publish_hover_setpoint()
 {
   // Note: OffboardControlMode is managed by offboard_state_machine
   px4_msgs::msg::VehicleRatesSetpoint msg;
@@ -733,7 +672,6 @@ void HoverTestNode::publish_hover_setpoint()
   
   // Timestamp
   msg.timestamp = offboard_utils::get_timestamp_us(this->get_clock());
-  // msg.timestamp = 0;
   
   // Publish
   rates_pub_->publish(msg);
@@ -749,7 +687,7 @@ void HoverTestNode::publish_hover_setpoint()
   }
 }
 
-void HoverTestNode::send_state_command(int state)
+void HoverTestNode50Hz::send_state_command(int state)
 {
   std_msgs::msg::Int32 msg;
   msg.data = state;
@@ -757,3 +695,4 @@ void HoverTestNode::send_state_command(int state)
   
   RCLCPP_INFO(this->get_logger(), "Sent state command: %d", state);
 }
+

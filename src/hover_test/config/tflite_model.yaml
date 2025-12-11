@@ -8,19 +8,20 @@
     
     # Model path (relative to package share directory or absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer0_policy.tflite"
-    
+    # model_path: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer1_policy.tflite"
+    model_path: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer1_policy_stable.tflite"
+    # model_path: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer0_policy.tflite"
     # Control timing
     timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)
-    hover_duration: 15.0  # Duration to run hover control [seconds]
+    hover_duration: 10.0  # Duration to run hover control [seconds]
     
     # Fallback hover parameters (used if neural control fails)
-    # hover_thrust: 0.251  # Normalized thrust for hovering [0.0-1.0]
-    hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
+    hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
+    # hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
 
     # Target point position (in NED frame, meters)
     # The neural network will control the drone to hover at this target point
-    target_x: 2.01  # Target X position
+    target_x: 1.50  # Target X position
     target_y: 0.0   # Target Y position
     target_z: -1.21  # Target Z position (NED: negative = above ground)
     
