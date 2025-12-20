@@ -30,7 +30,7 @@ def generate_launch_description() -> LaunchDescription:
     
     # In NED frame: x=North, y=East, z=Down
     # Takeoff position: hover at origin with 1.2m altitude
-    goto_x = 1.50   
+    goto_x = 0.50   
     goto_y = 0.0    
     goto_z = -takeoff_altitude  # NED: negative means up
     
@@ -50,14 +50,14 @@ def generate_launch_description() -> LaunchDescription:
             'goto_z': goto_z,            
             'goto_tol': 0.05,           # meters
             'goto_max_vel': 1.0,        # m/s
-            'goto_accel_time': 4.0,    # seconds to reach max velocity
+            'goto_accel_time': 3.0,    # seconds to reach max velocity
             "num_drones": 1,            # single drone
             "timer_period": 0.02,       # 50 Hz control loop
             "alt_tol": 0.01,            # altitude tolerance in meters
             "inward_offset": 0.0,       # no offset for single drone at origin
             "payload_offset_x": 0.0,    # no payload offset
             "payload_offset_y": 0.00,  # match goto_y for hover
-            "use_sim_time": True,
+            "use_sim_time": False,
         }],
     )
 

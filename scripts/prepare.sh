@@ -72,7 +72,7 @@ echo ""
 # ============================================================================
 # This command will be executed at the start of each screen session to
 # properly configure the ROS2 environment
-WORKSPACE_DIR="$HOME/realflight_ws"
+WORKSPACE_DIR="$HOME/RealFlight"
 ROS2_SETUP_CMD="source /opt/ros/humble/setup.bash && source $WORKSPACE_DIR/install/setup.bash"
 
 # ============================================================================

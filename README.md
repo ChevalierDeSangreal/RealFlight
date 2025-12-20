@@ -76,6 +76,7 @@ ros2 topic echo /fmu/in/vehicle_rates_setpoint
 ros2 topic echo /fmu/in/offboard_control_mode
 
 重新编译：
+source /opt/ros/humble/setup.bash
 
 cd ~/wangzimo/realflight_ws
 colcon build --packages-select traj_test

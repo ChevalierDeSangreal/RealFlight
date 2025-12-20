@@ -39,7 +39,7 @@ def generate_launch_description():
             config_file,
             {
                 'drone_id': drone_id,
-                'use_sim_time': True,
+                'use_sim_time': False,
             }
         ],
         output='screen',

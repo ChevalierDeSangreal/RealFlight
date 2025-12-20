@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <chrono>
 
 // Observation space bounds (matching HoverEnv training config)
 // obs: [v_body(3), g_body(3), target_distance_body(3)]
@@ -416,7 +417,12 @@ void HoverTestNode::action_update_callback()
         normalize_observation(obs_normalized);
         
         // Immediately run inference to get first action using normalized observation
+        auto inference_start = std::chrono::high_resolution_clock::now();
         std::vector<float> first_action = policy_->get_action(obs_normalized);
+        auto inference_end = std::chrono::high_resolution_clock::now();
+        auto inference_duration = std::chrono::duration_cast<std::chrono::microseconds>(inference_end - inference_start);
+        RCLCPP_INFO(this->get_logger(), "[NN INFERENCE TIME] First inference: %.3f ms (%.1f us)", 
+                    inference_duration.count() / 1000.0, inference_duration.count());
         
         // Update current_action_ immediately (thread-safe)
         {
@@ -427,56 +433,55 @@ void HoverTestNode::action_update_callback()
         // Print first action details (same format as update_neural_action)
         double elapsed = (this->now() - hover_start_time_).seconds();
         
-        // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
+      //   // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
         
-        // 1. 步序号 (this is step 1, the first inference after reset)
-        RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
-        RCLCPP_INFO(this->get_logger(), "========== STEP 0 (t=%.3fs) ==========", elapsed);
+      //   // 1. 步序号 (this is step 1, the first inference after reset)
+      //   RCLCPP_INFO(this->get_logger(), "========== STEP 0 (t=%.3fs) ==========", elapsed);
         
-        // 2. 原始观测（未归一化）
-        RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
-                    obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
-                    obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
-                    obs_raw[6], obs_raw[7], obs_raw[8]);   // target_distance_body
+      //   // 2. 原始观测（未归一化）
+      //   RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
+      //               obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
+      //               obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
+      //               obs_raw[6], obs_raw[7], obs_raw[8]);   // target_distance_body
         
-        // 3. 归一化后的观测（输入给神经网络的）
-        RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
-                    obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
-                    obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
-                    obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_distance_body
+      //   // 3. 归一化后的观测（输入给神经网络的）
+      //   RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
+      //               obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
+      //               obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
+      //               obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_distance_body
         
-        // 4. 网络原始输出（[-1, 1]范围的tanh输出）
-        float thrust_raw = first_action[0];
-        float omega_x_norm = first_action[1];
-        float omega_y_norm = first_action[2];
-        float omega_z_norm = first_action[3];
+      //   // 4. 网络原始输出（[-1, 1]范围的tanh输出）
+      //   float thrust_raw = first_action[0];
+      //   float omega_x_norm = first_action[1];
+      //   float omega_y_norm = first_action[2];
+      //   float omega_z_norm = first_action[3];
         
-        RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
-                    thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
+      //   RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
+      //               thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
         
-        // 5. 归一化后输出（denormalized到物理量）
-        constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
-        constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
-        constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
-        float roll_rate = omega_x_norm * OMEGA_MAX_X;
-        float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
-        float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
-        float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
+      //   // 5. 归一化后输出（denormalized到物理量）
+      //   constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
+      //   constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
+      //   constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
+      //   float roll_rate = omega_x_norm * OMEGA_MAX_X;
+      //   float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
+      //   float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
+      //   float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
         
-        RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
-                    thrust_normalized, roll_rate, pitch_rate, yaw_rate);
+      //   RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
+      //               thrust_normalized, roll_rate, pitch_rate, yaw_rate);
         
-        RCLCPP_INFO(this->get_logger(), "=====================================");
+      //   RCLCPP_INFO(this->get_logger(), "=====================================");
         
-        neural_control_ready_ = true;
-        RCLCPP_INFO(this->get_logger(), 
-                    "🚀 Neural control active! (effective duration: %.1f s)",
-                    hover_duration_ - elapsed);
-      } else {
-        // Fallback mode
-        neural_control_ready_ = true;
-        RCLCPP_WARN(this->get_logger(),
-                    "Neural control not available - using fallback hover");
+      //   neural_control_ready_ = true;
+      //   RCLCPP_INFO(this->get_logger(), 
+      //               "🚀 Neural control active! (effective duration: %.1f s)",
+      //               hover_duration_ - elapsed);
+      // } else {
+      //   // Fallback mode
+      //   neural_control_ready_ = true;
+      //   RCLCPP_WARN(this->get_logger(),
+      //               "Neural control not available - using fallback hover");
       }
       return;
     }
@@ -605,7 +610,10 @@ void HoverTestNode::update_neural_action()
   
   // Get action from neural network
   // Note: With separate 10Hz timer, we don't need internal action repeat anymore
+  auto inference_start = std::chrono::high_resolution_clock::now();
   std::vector<float> action = policy_->get_action(obs_normalized);
+  auto inference_end = std::chrono::high_resolution_clock::now();
+  auto inference_duration = std::chrono::duration_cast<std::chrono::microseconds>(inference_end - inference_start);
   
   // Update current action (thread-safe)
   {
@@ -619,8 +627,11 @@ void HoverTestNode::update_neural_action()
   // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
   
   // 1. 步序号
-  RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
   RCLCPP_INFO(this->get_logger(), "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
+  
+  // 1.5. 推理时间
+  RCLCPP_INFO(this->get_logger(), "[NN INFERENCE TIME] Step %d: %.3f ms (%.1f us)", 
+              step_counter_, inference_duration.count() / 1000.0, inference_duration.count());
   
   // 2. 原始观测（未归一化）
   RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_distance_body=[%.6f, %.6f, %.6f]",
