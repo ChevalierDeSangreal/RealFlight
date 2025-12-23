@@ -371,68 +371,73 @@ void TrajTestNode::action_update_callback()
                     "✅ Mode stabilized (%.2f s) - Initializing neural control...",
                     elapsed);
         
-        // Get initial observation to fill the buffer (must match training!)
-        std::vector<float> initial_obs = get_observation();
+        // Initialize buffer with zero observation vector
+        std::vector<float> initial_obs_for_reset(OBS_DIM, 0.0f);  // Zero observation vector for buffer initialization
         
-        // Normalize observation to [-1, 1] range (CRITICAL: must match training!)
-        normalize_observation(initial_obs);
+        // Hovering action (normalized): [thrust in [-1,1], omega_x=0, omega_y=0, omega_z=0]
+        // Hovering thrust from config: [0,1] range -> [-1,1] range
+        // Mapping: [-1,1] = 2 * [0,1] - 1
+        float hover_thrust_normalized = 2.0f * static_cast<float>(hover_thrust_) - 1.0f;
+        std::vector<float> hovering_action = {hover_thrust_normalized, 0.0f, 0.0f, 0.0f};
         
-        // Hovering action (normalized): [thrust, omega_x=0, omega_y=0, omega_z=0]
-        // Map hover_thrust_ from [0,1] to [-1,1] range for neural network input
-        float hovering_thrust_normalized = 2.0f * hover_thrust_ - 1.0f;
-        std::vector<float> hovering_action = {hovering_thrust_normalized, 0.0f, 0.0f, 0.0f};
+        policy_->reset(initial_obs_for_reset, hovering_action);
         
-        policy_->reset(initial_obs, hovering_action);
-        
-        // Print input buffer for step 0 (after reset, before first inference)
-        if (policy_) {
-          std::vector<float> buffer_data = policy_->get_flattened_buffer();
-          RCLCPP_INFO(this->get_logger(), "");
-          RCLCPP_INFO(this->get_logger(), "========== STEP 0 INPUT BUFFER (130 dims) ==========");
-          RCLCPP_INFO(this->get_logger(), "Buffer size: %zu", buffer_data.size());
+        // // Print input buffer for step 0 (after reset, before first inference)
+        // if (policy_) {
+        //   std::vector<float> buffer_data = policy_->get_flattened_buffer();
+        //   RCLCPP_INFO(this->get_logger(), "");
+        //   RCLCPP_INFO(this->get_logger(), "========== STEP 0 INPUT BUFFER (130 dims) ==========");
+        //   RCLCPP_INFO(this->get_logger(), "Buffer size: %zu", buffer_data.size());
           
-          // Print buffer in format: [action(4), obs(9)] * 10
-          constexpr int BUFFER_SIZE = 10;
-          constexpr int ACTION_DIM = 4;
-          constexpr int OBS_DIM = 9;
-          for (int i = 0; i < BUFFER_SIZE; ++i) {
-            int base_idx = i * (ACTION_DIM + OBS_DIM);
-            RCLCPP_INFO(this->get_logger(), 
-                        "  [Step %d] action=[%.6f, %.6f, %.6f, %.6f], obs=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f]",
-                        i,
-                        buffer_data[base_idx + 0], buffer_data[base_idx + 1], 
-                        buffer_data[base_idx + 2], buffer_data[base_idx + 3],  // action
-                        buffer_data[base_idx + 4], buffer_data[base_idx + 5], buffer_data[base_idx + 6],  // obs[0:3]
-                        buffer_data[base_idx + 7], buffer_data[base_idx + 8], buffer_data[base_idx + 9],  // obs[3:6]
-                        buffer_data[base_idx + 10], buffer_data[base_idx + 11], buffer_data[base_idx + 12]); // obs[6:9]
-          }
+        //   // Print buffer in format: [action(4), obs(9)] * 10
+        //   constexpr int BUFFER_SIZE = 10;
+        //   constexpr int ACTION_DIM = 4;
+        //   constexpr int OBS_DIM = 9;
+        //   for (int i = 0; i < BUFFER_SIZE; ++i) {
+        //     int base_idx = i * (ACTION_DIM + OBS_DIM);
+        //     RCLCPP_INFO(this->get_logger(), 
+        //                 "  [Step %d] action=[%.6f, %.6f, %.6f, %.6f], obs=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f]",
+        //                 i,
+        //                 buffer_data[base_idx + 0], buffer_data[base_idx + 1], 
+        //                 buffer_data[base_idx + 2], buffer_data[base_idx + 3],  // action
+        //                 buffer_data[base_idx + 4], buffer_data[base_idx + 5], buffer_data[base_idx + 6],  // obs[0:3]
+        //                 buffer_data[base_idx + 7], buffer_data[base_idx + 8], buffer_data[base_idx + 9],  // obs[3:6]
+        //                 buffer_data[base_idx + 10], buffer_data[base_idx + 11], buffer_data[base_idx + 12]); // obs[6:9]
+        //   }
           
-          // Print flattened buffer as single line (for easy copy-paste)
-          RCLCPP_INFO(this->get_logger(), "Flattened buffer (single line, 130 values):");
-          std::string buffer_str = "  [";
-          for (size_t i = 0; i < buffer_data.size(); ++i) {
-            char num_str[32];
-            snprintf(num_str, sizeof(num_str), "%.6f", buffer_data[i]);
-            buffer_str += num_str;
-            if (i < buffer_data.size() - 1) {
-              buffer_str += ", ";
-            }
-          }
-          buffer_str += "]";
-          // Split long string into multiple log lines for readability
-          const size_t max_line_length = 200;
-          size_t pos = 0;
-          while (pos < buffer_str.length()) {
-            size_t end_pos = std::min(pos + max_line_length, buffer_str.length());
-            std::string line = buffer_str.substr(pos, end_pos - pos);
-            RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
-            pos = end_pos;
-          }
-          RCLCPP_INFO(this->get_logger(), "===================================================");
-        }
+        //   // Print flattened buffer as single line (for easy copy-paste)
+        //   RCLCPP_INFO(this->get_logger(), "Flattened buffer (single line, 130 values):");
+        //   std::string buffer_str = "  [";
+        //   for (size_t i = 0; i < buffer_data.size(); ++i) {
+        //     char num_str[32];
+        //     snprintf(num_str, sizeof(num_str), "%.6f", buffer_data[i]);
+        //     buffer_str += num_str;
+        //     if (i < buffer_data.size() - 1) {
+        //       buffer_str += ", ";
+        //     }
+        //   }
+        //   buffer_str += "]";
+        //   // Split long string into multiple log lines for readability
+        //   const size_t max_line_length = 200;
+        //   size_t pos = 0;
+        //   while (pos < buffer_str.length()) {
+        //     size_t end_pos = std::min(pos + max_line_length, buffer_str.length());
+        //     std::string line = buffer_str.substr(pos, end_pos - pos);
+        //     RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
+        //     pos = end_pos;
+        //   }
+        //   RCLCPP_INFO(this->get_logger(), "===================================================");
+        // }
         
-        // Immediately run inference to get first action
-        std::vector<float> first_action = policy_->get_action(initial_obs);
+        // Get ACTUAL observation for first inference
+        std::vector<float> obs_raw = get_observation();
+        
+        // Make a copy for normalization
+        std::vector<float> obs_normalized = obs_raw;
+        normalize_observation(obs_normalized);
+        
+        // Immediately run inference to get first action using normalized observation
+        std::vector<float> first_action = policy_->get_action(obs_normalized);
         
         // Update current_action_ immediately (thread-safe)
         {
@@ -441,8 +446,6 @@ void TrajTestNode::action_update_callback()
         }
         
         // Print first action details (same format as update_neural_action)
-        // Get raw observation (before normalization) for printing
-        std::vector<float> obs_raw = get_observation();
         double elapsed = (this->now() - hover_start_time_).seconds();
         
         // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
@@ -459,9 +462,9 @@ void TrajTestNode::action_update_callback()
         
         // 3. 归一化后的观测（输入给神经网络的）
         RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
-                    initial_obs[0], initial_obs[1], initial_obs[2],    // v_body
-                    initial_obs[3], initial_obs[4], initial_obs[5],    // g_body
-                    initial_obs[6], initial_obs[7], initial_obs[8]);   // target_pos_body
+                    obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
+                    obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
+                    obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_pos_body
         
         // 4. 网络原始输出（[-1, 1]范围的tanh输出）
         float thrust_raw = first_action[0];

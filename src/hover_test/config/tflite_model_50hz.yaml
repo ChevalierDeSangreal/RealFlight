@@ -16,11 +16,11 @@
     # Control timing (50Hz version)
     action_update_period: 0.02  # 50 Hz neural network inference (dt=0.02s)
     control_send_period: 0.01    # 100 Hz control loop for command transmission
-    hover_duration: 100.0  # Duration to run hover control [seconds]
+    hover_duration: 10.0  # Duration to run hover control [seconds]
     
     # Fallback hover parameters (used if neural control fails)
-    # hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
-    hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
+    hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
+    # hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
     
     # Mode stabilization delay
     mode_stabilization_delay: 0.6  # Wait 0.6s for mode switch stabilization [seconds]

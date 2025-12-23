@@ -30,7 +30,7 @@ def generate_launch_description():
         default_value=PathJoinSubstitution([
             FindPackageShare('traj_test'),
             'config',
-            'trackVer8_policy_stablerer.tflite'
+            'trackVer10_policy.tflite'
         ]),
         description='Path to the TFLite model file'
     )
