@@ -21,7 +21,7 @@
 
     # Target point position (in NED frame, meters)
     # The neural network will control the drone to hover at this target point
-    target_x: 0.50  # Target X position
+    target_x: 0.0  # Target X position
     target_y: 0.0   # Target Y position
     target_z: -1.21  # Target Z position (NED: negative = above ground)
     
