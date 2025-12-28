@@ -55,16 +55,55 @@ MicroXRCEAgent udp4 -p 8888
 ```
 
 3. (state machine)
+
+offboard_state_machine 包支持两种运行模式：
+- **onboard 模式（默认）**：用于实机环境，`use_sim_time=False`
+- **sitl 模式**：用于仿真环境，`use_sim_time=True`
+
 ```bash
 cd /home/carlson/wangzimo/realflight_ws
 source ./install/setup.bash
+
+# 启动单机状态机（默认 onboard 模式）
 ros2 launch offboard_state_machine single_drone_test.launch.py
+
+# 启动 SITL 模式（仿真环境）
+ros2 launch offboard_state_machine single_drone_test.launch.py mode:=sitl
+
+# 启动多机状态机（默认 onboard 模式）
+ros2 launch offboard_state_machine multi_drone_goto.launch.py
+
+# 启动多机状态机 SITL 模式
+ros2 launch offboard_state_machine multi_drone_goto.launch.py mode:=sitl
+
+# 指定无人机 ID 和模式
+ros2 launch offboard_state_machine single_drone_test.launch.py drone_id:=0 mode:=sitl
 ```
 
+### 神经网络控制节点启动
+
+hover_test 包支持两种运行模式：
+- **onboard 模式（默认）**：用于实机环境，使用 `model_path`（绝对路径），`use_sim_time=False`
+- **sitl 模式**：用于仿真环境，使用 `model_path_sitl`（绝对路径），`use_sim_time=True`
+
+配置文件（`tflite_model.yaml` 和 `tflite_model_50hz.yaml`）中同时包含 `model_path` 和 `model_path_sitl` 两个参数，launch 文件会根据模式自动选择使用哪个路径。两种模式都使用绝对路径，但路径指向不同的环境（实机环境 vs 仿真环境）。
+
 ```bash
+# 启动神经网络控制节点（默认 onboard 模式）
 ros2 launch track_test tflite_neural_control.launch.py
 ros2 launch hover_test tflite_neural_control.launch.py
 ros2 launch hover_test tflite_neural_control_50hz.launch.py
+
+# 启动 SITL 模式（仿真环境）
+ros2 launch hover_test tflite_neural_control.launch.py mode:=sitl
+ros2 launch hover_test tflite_neural_control_50hz.launch.py mode:=sitl
+
+# 显式指定 onboard 模式（实机环境，默认）
+ros2 launch hover_test tflite_neural_control.launch.py mode:=onboard
+ros2 launch hover_test tflite_neural_control_50hz.launch.py mode:=onboard
+
+# 指定无人机 ID 和模式
+ros2 launch hover_test tflite_neural_control_50hz.launch.py drone_id:=0 mode:=sitl
 ```
 
 ```bash

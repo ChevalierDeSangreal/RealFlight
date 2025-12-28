@@ -2,7 +2,8 @@ import math
 import numpy as np
 import launch
 from launch import LaunchDescription
-from launch.actions import OpaqueFunction
+from launch.actions import OpaqueFunction, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 try:
@@ -17,6 +18,13 @@ except ImportError as e:
 
 def launch_setup(context, *args, **kwargs):
     """Called by OpaqueFunction at launch-generation time."""
+    # Get the actual mode value from context
+    mode = LaunchConfiguration('mode')
+    mode_value = context.perform_substitution(mode)
+    
+    # Set use_sim_time based on mode
+    use_sim_time = (mode_value == 'sitl')
+    
     # Instantiate the loader and compute the drone positions (shape: N×3).
     loader = DataLoader()                       # heavy imports (casadi, numpy) are okay here
     R_enu_2_ned = np.array([
@@ -54,7 +62,7 @@ def launch_setup(context, *args, **kwargs):
                     "goto_y":   float(drone_pos_NED[i, 1]),
                     "goto_z":   float(drone_pos_NED[i, 2]),
                     "num_drones": num_drones,
-                    "use_sim_time": True,
+                    "use_sim_time": use_sim_time,
                 }],
                 # keep default remappings – the FSM already builds its own namespace
             )
@@ -64,6 +72,14 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description() -> LaunchDescription:
+    mode_arg = DeclareLaunchArgument(
+        'mode',
+        default_value='onboard',
+        choices=['onboard', 'sitl'],
+        description='Operation mode: onboard (default) or sitl'
+    )
+    
     return LaunchDescription([
+        mode_arg,
         OpaqueFunction(function=launch_setup)
     ])

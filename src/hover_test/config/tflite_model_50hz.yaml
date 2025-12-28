@@ -6,12 +6,17 @@
     # Neural network control
     use_neural_control: true
     
-    # Model path (relative to package share directory or absolute path)
+    # Model path (onboard mode - absolute path)
     # You may need to adjust this path based on your installation
     # Note: This should be a model trained for 50Hz control (dt=0.02s)
     model_path: "/home/radxa/RealFlight/src/hover_test/config/hoverVer2_policy.tflite"
     # model_path: "/home/radxa/RealFlight/src/hover_test/config/hoverVer1_policy_stable.tflite"
     # model_path: "/home/radxa/RealFlight/src/hover_test/config/hoverVer0_policy.tflite"
+    
+    # Model path (SITL mode - absolute path)
+    model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer2_policy.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer1_policy_stable.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer0_policy.tflite"
     
     # Control timing (50Hz version)
     action_update_period: 0.02  # 50 Hz neural network inference (dt=0.02s)

@@ -6,9 +6,12 @@
     # Neural network control
     use_neural_control: true
     
-    # Model path (relative to package share directory or absolute path)
+    # Model path (onboard mode - absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/carlson/wangzimo/realflight_ws/src/track_test/config/trackVer8_policy_stabler.tflite"
+    model_path: "/home/radxa/RealFlight/src/track_test/config/trackVer8_policy_stabler.tflite"
+    
+    # Model path (SITL mode - absolute path)
+    model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/track_test/config/trackVer8_policy_stabler.tflite"
     
     # Control timing
     timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)

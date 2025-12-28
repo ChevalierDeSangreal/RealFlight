@@ -7,7 +7,7 @@ Launches one drone that takes off to 1.5m and hovers at the takeoff position
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.substitutions import EnvironmentVariable
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description() -> LaunchDescription:
@@ -25,7 +25,32 @@ def generate_launch_description() -> LaunchDescription:
         default_value=drone_id_env,
         description='Drone ID'
     )
+    
+    mode_arg = DeclareLaunchArgument(
+        'mode',
+        default_value='onboard',
+        choices=['onboard', 'sitl'],
+        description='Operation mode: onboard (default) or sitl'
+    )
+    
+    return LaunchDescription([
+        drone_id_arg,
+        mode_arg,
+        OpaqueFunction(function=launch_setup),
+    ])
+
+
+def launch_setup(context, *args, **kwargs):
+    """Setup function to dynamically configure based on mode."""
     drone_id = LaunchConfiguration('drone_id')
+    mode = LaunchConfiguration('mode')
+    
+    # Get the actual mode value from context
+    mode_value = context.perform_substitution(mode)
+    
+    # Set use_sim_time based on mode
+    use_sim_time = (mode_value == 'sitl')
+    
     takeoff_altitude = 1.2  # meters above ground
     
     # In NED frame: x=North, y=East, z=Down
@@ -57,11 +82,8 @@ def generate_launch_description() -> LaunchDescription:
             "inward_offset": 0.0,       # no offset for single drone at origin
             "payload_offset_x": 0.0,    # no payload offset
             "payload_offset_y": 0.00,  # match goto_y for hover
-            "use_sim_time": False,
+            "use_sim_time": use_sim_time,
         }],
     )
 
-    return LaunchDescription([
-        drone_id_arg,
-        fsm_node,
-    ])
+    return [fsm_node]

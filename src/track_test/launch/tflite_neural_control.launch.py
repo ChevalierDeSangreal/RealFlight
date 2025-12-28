@@ -1,8 +1,10 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+import os
+import yaml
 
 
 def generate_launch_description():
@@ -15,30 +17,59 @@ def generate_launch_description():
         description='Drone ID'
     )
     
-    config_file_arg = DeclareLaunchArgument(
-        'config_file',
-        default_value=PathJoinSubstitution([
-            FindPackageShare('track_test'),
-            'config',
-            'tflite_model.yaml'
-        ]),
-        description='Path to the TFLite model configuration YAML file'
+    mode_arg = DeclareLaunchArgument(
+        'mode',
+        default_value='onboard',
+        choices=['onboard', 'sitl'],
+        description='Operation mode: onboard (default) or sitl'
     )
     
-    model_path_arg = DeclareLaunchArgument(
-        'model_path',
-        default_value=PathJoinSubstitution([
-            FindPackageShare('track_test'),
-            'config',
-            'trackVer8_policy_stablerer.tflite'
-        ]),
-        description='Path to the TFLite model file'
-    )
-    
-    # Get launch configurations
+    return LaunchDescription([
+        drone_id_arg,
+        mode_arg,
+        OpaqueFunction(function=launch_setup),
+    ])
+
+
+def launch_setup(context, *args, **kwargs):
+    """Setup function to dynamically configure based on mode."""
     drone_id = LaunchConfiguration('drone_id')
-    config_file = LaunchConfiguration('config_file')
-    model_path = LaunchConfiguration('model_path')
+    mode = LaunchConfiguration('mode')
+    
+    # Get the actual mode value from context
+    mode_value = context.perform_substitution(mode)
+    
+    # Get package share directory
+    package_share_dir = context.perform_substitution(FindPackageShare('track_test'))
+    config_file_path = os.path.join(package_share_dir, 'config', 'tflite_model.yaml')
+    
+    # Set use_sim_time based on mode
+    use_sim_time = (mode_value == 'sitl')
+    
+    # Load config file and prepare parameters
+    with open(config_file_path, 'r') as f:
+        config_data = yaml.safe_load(f)
+    
+    # The YAML key is '/**' not '**'
+    yaml_key = '/**' if '/**' in config_data else '**'
+    
+    if yaml_key not in config_data or 'ros__parameters' not in config_data[yaml_key]:
+        raise RuntimeError(f"Invalid YAML structure in config file: {config_file_path}")
+    
+    ros_params = config_data[yaml_key]['ros__parameters'].copy()
+    
+    # In SITL mode, replace model_path with model_path_sitl
+    if mode_value == 'sitl':
+        if 'model_path_sitl' not in ros_params:
+            raise RuntimeError(f"model_path_sitl not found in config file: {config_file_path}")
+        ros_params['model_path'] = ros_params.pop('model_path_sitl')  # Replace model_path with model_path_sitl
+    
+    # Add other parameters
+    ros_params['drone_id'] = drone_id
+    ros_params['use_sim_time'] = use_sim_time
+    
+    # Prepare node parameters - use dictionary directly instead of YAML file
+    node_parameters = [ros_params]
     
     # Trajectory test node with neural network control
     track_test_node = Node(
@@ -46,23 +77,11 @@ def generate_launch_description():
         executable='track_test_node',
         name=['track_test_node_', drone_id],
         namespace='',
-        parameters=[
-            config_file,
-            {
-                'drone_id': drone_id,
-                'model_path': model_path,
-                'use_sim_time': True,
-            }
-        ],
+        parameters=node_parameters,
         output='screen',
         emulate_tty=True,
         arguments=[drone_id]
     )
     
-    return LaunchDescription([
-        drone_id_arg,
-        config_file_arg,
-        model_path_arg,
-        track_test_node,
-    ])
+    return [track_test_node]
 
