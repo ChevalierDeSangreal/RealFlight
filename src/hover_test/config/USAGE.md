@@ -4,7 +4,7 @@
 
 ```bash
 cd ~/wangzimo/realflight_ws
-colcon build --packages-select traj_test
+colcon build --packages-select track_test
 source install/setup.bash
 ```
 
@@ -12,7 +12,7 @@ source install/setup.bash
 
 ```bash
 # 启动神经网络控制
-ros2 launch traj_test tflite_neural_control.launch.py
+ros2 launch track_test tflite_neural_control.launch.py
 ```
 
 ## 3. 参数说明
@@ -54,7 +54,7 @@ ros2 launch traj_test tflite_neural_control.launch.py
 ```
 [INIT] → [ARMING] → [TAKEOFF] → [GOTO] → [HOVER]
                                               ↓
-                        [traj_test 发送 TRAJ 命令]
+                        [track_test 发送 TRAJ 命令]
                                               ↓
                                           [TRAJ 状态]
                                               ↓
@@ -63,7 +63,7 @@ ros2 launch traj_test tflite_neural_control.launch.py
                                               ↓
                                      持续 hover_duration
                                               ↓
-                        [traj_test 发送 END_TRAJ 命令]
+                        [track_test 发送 END_TRAJ 命令]
                                               ↓
                                            [LAND]
 ```

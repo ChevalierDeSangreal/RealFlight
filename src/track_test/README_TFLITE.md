@@ -1,10 +1,10 @@
-# TFLite Neural Network Control for traj_test
+# TFLite Neural Network Control for track_test
 
 本文档说明如何使用 TensorFlow Lite 神经网络模型控制无人机轨迹。
 
 ## 概述
 
-`traj_test` 包已集成 TFLite 推理功能，使用训练好的神经网络策略（TrackVer6）来生成四旋翼控制指令。
+`track_test` 包已集成 TFLite 推理功能，使用训练好的神经网络策略（TrackVer6）来生成四旋翼控制指令。
 
 ### 模型信息
 
@@ -61,7 +61,7 @@ set(TFLITE_LIB_DIR "/your/custom/path/lib" CACHE PATH "TensorFlow Lite library d
 
 ```bash
 cd /home/carlson/wangzimo/realflight_ws
-colcon build --packages-select traj_test
+colcon build --packages-select track_test
 source install/setup.bash
 ```
 
@@ -71,15 +71,15 @@ source install/setup.bash
 
 ```bash
 # 启动神经网络控制节点
-ros2 launch traj_test tflite_neural_control.launch.py drone_id:=0
+ros2 launch track_test tflite_neural_control.launch.py drone_id:=0
 
 # 指定不同的模型路径
-ros2 launch traj_test tflite_neural_control.launch.py \
+ros2 launch track_test tflite_neural_control.launch.py \
     drone_id:=0 \
     model_path:=/path/to/your/model.tflite
 
 # 指定不同的配置文件
-ros2 launch traj_test tflite_neural_control.launch.py \
+ros2 launch track_test tflite_neural_control.launch.py \
     drone_id:=0 \
     config_file:=/path/to/your/config.yaml
 ```
@@ -87,9 +87,9 @@ ros2 launch traj_test tflite_neural_control.launch.py \
 ### 方式2: 直接运行节点
 
 ```bash
-ros2 run traj_test traj_test_node 0 \
+ros2 run track_test track_test_node 0 \
     --ros-args \
-    --params-file /home/carlson/wangzimo/realflight_ws/src/traj_test/config/tflite_model.yaml
+    --params-file /home/carlson/wangzimo/realflight_ws/src/track_test/config/tflite_model.yaml
 ```
 
 ## 配置文件说明
@@ -196,18 +196,18 @@ ros2 topic echo /fmu/out/vehicle_odometry
 ## 文件结构
 
 ```
-traj_test/
+track_test/
 ├── config/
 │   ├── trackVer6_policy.tflite       # TFLite 模型文件
 │   ├── tflite_model.yaml             # 神经网络控制配置
 │   ├── model_info.txt                # 模型详细信息
 │   └── tflite_inference_example.cpp  # 推理示例代码
-├── include/traj_test/
+├── include/track_test/
 │   ├── tflite_policy.hpp             # TFLite 推理封装类
-│   └── traj_test_node.hpp            # 主节点头文件
+│   └── track_test_node.hpp            # 主节点头文件
 ├── src/
-│   ├── traj_test_node.cpp            # 主节点实现
-│   └── traj_test_main.cpp            # 主函数
+│   ├── track_test_node.cpp            # 主节点实现
+│   └── track_test_main.cpp            # 主函数
 ├── launch/
 │   └── tflite_neural_control.launch.py  # 启动文件
 └── CMakeLists.txt                    # 构建配置

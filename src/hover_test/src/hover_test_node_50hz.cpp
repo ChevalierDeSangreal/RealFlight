@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 // Observation space bounds (matching HoverEnv training config)
 // obs: [v_body(3), g_body(3), target_distance_body(3)]
@@ -71,10 +72,30 @@ HoverTestNode50Hz::HoverTestNode50Hz(int drone_id)
   action_update_period_ = this->declare_parameter("action_update_period", 0.02);  // 50 Hz for NN inference
   control_send_period_  = this->declare_parameter("control_send_period", 0.01);  // 100 Hz for control commands
   use_neural_control_ = this->declare_parameter("use_neural_control", true);
-  model_path_       = this->declare_parameter("model_path", "");
+  std::string model_path_param = this->declare_parameter("model_path", "");
   target_x_         = this->declare_parameter("target_x", 0.0);
   target_y_         = this->declare_parameter("target_y", 0.0);
   target_z_         = this->declare_parameter("target_z", 2.0);
+  
+  // Process model_path: if relative path, prepend package share directory
+  if (!model_path_param.empty()) {
+    if (model_path_param[0] != '/') {
+      // Relative path - prepend package share directory
+      try {
+        std::string package_share_dir = ament_index_cpp::get_package_share_directory("hover_test");
+        // Simple path concatenation (Linux/Unix path separator is '/')
+        model_path_ = package_share_dir + "/" + model_path_param;
+      } catch (const std::exception& e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to get package share directory: %s", e.what());
+        model_path_ = model_path_param;  // Fallback to original path
+      }
+    } else {
+      // Absolute path - use as is
+      model_path_ = model_path_param;
+    }
+  } else {
+    model_path_ = "";
+  }
   
   // PX4 namespace
   px4_namespace_ = get_px4_namespace(drone_id_);

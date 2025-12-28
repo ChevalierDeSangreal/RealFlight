@@ -3,7 +3,7 @@
 <package format="3">
   <name>track_test</name>
   <version>0.0.0</version>
-  <description>Angular rate control test package for PX4</description>
+  <description>TODO: Package description</description>
   <maintainer email="yichao_gao@u.nus.edu">carlson</maintainer>
   <license>TODO: License declaration</license>
 
@@ -21,4 +21,3 @@
     <build_type>ament_cmake</build_type>
   </export>
 </package>
-

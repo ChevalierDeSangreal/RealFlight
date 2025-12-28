@@ -18,7 +18,7 @@ def generate_launch_description():
     config_file_arg = DeclareLaunchArgument(
         'config_file',
         default_value=PathJoinSubstitution([
-            FindPackageShare('traj_test'),
+            FindPackageShare('track_test'),
             'config',
             'tflite_model.yaml'
         ]),
@@ -28,7 +28,7 @@ def generate_launch_description():
     model_path_arg = DeclareLaunchArgument(
         'model_path',
         default_value=PathJoinSubstitution([
-            FindPackageShare('traj_test'),
+            FindPackageShare('track_test'),
             'config',
             'trackVer8_policy_stablerer.tflite'
         ]),
@@ -41,10 +41,10 @@ def generate_launch_description():
     model_path = LaunchConfiguration('model_path')
     
     # Trajectory test node with neural network control
-    traj_test_node = Node(
-        package='traj_test',
-        executable='traj_test_node',
-        name=['traj_test_node_', drone_id],
+    track_test_node = Node(
+        package='track_test',
+        executable='track_test_node',
+        name=['track_test_node_', drone_id],
         namespace='',
         parameters=[
             config_file,
@@ -63,6 +63,6 @@ def generate_launch_description():
         drone_id_arg,
         config_file_arg,
         model_path_arg,
-        traj_test_node,
+        track_test_node,
     ])
 

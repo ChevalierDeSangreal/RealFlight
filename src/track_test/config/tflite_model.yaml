@@ -1,4 +1,4 @@
-# TFLite Neural Network Model Configuration for Trajectory Test
+# TFLite Neural Network Model Configuration for Track Test
 # This configuration file specifies the neural network model and control parameters
 
 /**:
@@ -8,7 +8,7 @@
     
     # Model path (relative to package share directory or absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/carlson/wangzimo/realflight_ws/src/traj_test/config/trackVer8_policy_stabler.tflite"
+    model_path: "/home/carlson/wangzimo/realflight_ws/src/track_test/config/trackVer8_policy_stabler.tflite"
     
     # Control timing
     timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)

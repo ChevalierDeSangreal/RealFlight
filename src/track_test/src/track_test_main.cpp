@@ -14,11 +14,10 @@ int main(int argc, char** argv)
   auto node = std::make_shared<TrackTestNode>(drone_id);
   
   RCLCPP_INFO(node->get_logger(), 
-              "Starting angular rate control test node for drone %d", drone_id);
+              "Starting trajectory test node for drone %d", drone_id);
   
   rclcpp::spin(node);
   rclcpp::shutdown();
   
   return 0;
 }
-
