@@ -76,6 +76,8 @@ HoverTestNode50Hz::HoverTestNode50Hz(int drone_id)
   target_x_         = this->declare_parameter("target_x", 0.0);
   target_y_         = this->declare_parameter("target_y", 0.0);
   target_z_         = this->declare_parameter("target_z", 2.0);
+  safety_threshold_horizontal_ = this->declare_parameter("safety_threshold_horizontal", 5.0);
+  safety_threshold_vertical_   = this->declare_parameter("safety_threshold_vertical", 3.0);
   
   // Process model_path: if relative path, prepend package share directory
   if (!model_path_param.empty()) {
@@ -116,6 +118,10 @@ HoverTestNode50Hz::HoverTestNode50Hz(int drone_id)
               "  - Control send period: %.3f s (%.1f Hz)", control_send_period_, 1.0/control_send_period_);
   RCLCPP_INFO(this->get_logger(),
               "  - Target point: [%.2f, %.2f, %.2f]", target_x_, target_y_, target_z_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Safety threshold horizontal: %.2f m", safety_threshold_horizontal_);
+  RCLCPP_INFO(this->get_logger(),
+              "  - Safety threshold vertical: %.2f m", safety_threshold_vertical_);
   RCLCPP_INFO(this->get_logger(), 
               "  - PX4 namespace: %s", px4_namespace_.c_str());
   
@@ -339,6 +345,17 @@ void HoverTestNode50Hz::action_update_callback()
   if (current_state_ == FsmState::TRAJ && hover_started_ && !hover_completed_) {
     // Calculate elapsed time from timestamp
     double elapsed = (this->now() - hover_start_time_).seconds();
+    
+    // Check safety threshold first
+    if (!check_safety_threshold()) {
+      RCLCPP_ERROR(this->get_logger(), 
+                   "❌ SAFETY THRESHOLD EXCEEDED - Terminating TRAJ state and shutting down!");
+      send_state_command(static_cast<int>(FsmState::END_TRAJ));
+      hover_completed_ = true;
+      // Shutdown the node
+      rclcpp::shutdown();
+      return;
+    }
     
     // Check if TRAJ control duration is complete
     if (elapsed >= hover_duration_) {
@@ -715,5 +732,41 @@ void HoverTestNode50Hz::send_state_command(int state)
   state_cmd_pub_->publish(msg);
   
   RCLCPP_INFO(this->get_logger(), "Sent state command: %d", state);
+}
+
+// Check if distance to target exceeds safety threshold
+bool HoverTestNode50Hz::check_safety_threshold()
+{
+  // Calculate distance to target
+  double dx = target_x_ - current_x_;
+  double dy = target_y_ - current_y_;
+  double dz = target_z_ - current_z_;
+  
+  // Calculate horizontal and vertical distances
+  double horizontal_distance = std::sqrt(dx * dx + dy * dy);
+  double vertical_distance = std::abs(dz);
+  
+  // Check thresholds
+  if (horizontal_distance > safety_threshold_horizontal_) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "❌ Horizontal distance to target (%.2f m) exceeds safety threshold (%.2f m)!",
+                 horizontal_distance, safety_threshold_horizontal_);
+    RCLCPP_ERROR(this->get_logger(),
+                 "   Current position: [%.2f, %.2f, %.2f], Target: [%.2f, %.2f, %.2f]",
+                 current_x_, current_y_, current_z_, target_x_, target_y_, target_z_);
+    return false;
+  }
+  
+  if (vertical_distance > safety_threshold_vertical_) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "❌ Vertical distance to target (%.2f m) exceeds safety threshold (%.2f m)!",
+                 vertical_distance, safety_threshold_vertical_);
+    RCLCPP_ERROR(this->get_logger(),
+                 "   Current position: [%.2f, %.2f, %.2f], Target: [%.2f, %.2f, %.2f]",
+                 current_x_, current_y_, current_z_, target_x_, target_y_, target_z_);
+    return false;
+  }
+  
+  return true;
 }
 

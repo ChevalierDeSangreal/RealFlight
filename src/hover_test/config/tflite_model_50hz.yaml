@@ -36,6 +36,10 @@
     target_y: 0.0   # Target Y position
     target_z: -1.21  # Target Z position (NED: negative = above ground)
     
+    # Safety thresholds for distance to target
+    safety_threshold_horizontal: 1.4  # Maximum horizontal distance to target [meters]
+    safety_threshold_vertical: 1.0    # Maximum vertical distance to target [meters]
+    
 # Notes:
 # - The model expects observations at 50 Hz (dt=0.02s) for this configuration
 # - Action update happens at 50Hz, control commands are sent at 100Hz

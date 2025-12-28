@@ -41,6 +41,7 @@ private:
   void publish_current_action();     // Publish current action at high frequency
   void publish_hover_setpoint();     // Fallback hover control
   void send_state_command(int state);
+  bool check_safety_threshold();     // Check if distance to target exceeds safety threshold
   
   std::vector<float> get_observation();
   
@@ -110,6 +111,10 @@ private:
   double target_x_;
   double target_y_;
   double target_z_;
+  
+  // Safety thresholds
+  double safety_threshold_horizontal_;  // Maximum horizontal distance to target [m]
+  double safety_threshold_vertical_;    // Maximum vertical distance to target [m]
   
   // Neural network policy (50Hz version with buffer size 50)
   std::unique_ptr<TFLitePolicyInference50Hz> policy_;

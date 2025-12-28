@@ -29,6 +29,10 @@
     target_y: 0.0   # Target Y position
     target_z: -1.21  # Target Z position (NED: negative = above ground)
     
+    # Safety thresholds for distance to target
+    safety_threshold_horizontal: 1.4  # Maximum horizontal distance to target [meters]
+    safety_threshold_vertical: 1.0    # Maximum vertical distance to target [meters]
+    
 # Notes:
 # - The model expects observations at 100 Hz (dt=0.01s)
 # - Action repeat (10 steps) is handled internally in the TFLitePolicyInference class
