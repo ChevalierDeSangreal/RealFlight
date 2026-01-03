@@ -6,7 +6,15 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    """Launch trajectory test node for a single drone."""
+    """
+    Launch track test node for a single drone.
+    
+    This node supports two target generation modes:
+    1. Static mode (use_target_topic=false): Generate fixed target in front of drone
+    2. Topic mode (use_target_topic=true): Subscribe to ROS2 topic for real-time target
+    
+    Configure the mode in config/tflite_model.yaml
+    """
     
     # Declare launch arguments
     drone_id_arg = DeclareLaunchArgument(
@@ -20,7 +28,7 @@ def generate_launch_description():
         default_value=PathJoinSubstitution([
             FindPackageShare('track_test'),
             'config',
-            'track_params.yaml'
+            'tflite_model.yaml'  # Updated to use tflite_model.yaml with target generation params
         ]),
         description='Path to the configuration YAML file'
     )

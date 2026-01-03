@@ -165,7 +165,8 @@ OffboardFSM::OffboardFSM(int drone_id)
 , takeoff_start_count_(0)
 , takeoff_complete_count_(-1)
 , landing_start_count_(0)
-, use_attitude_control_(false)         
+, use_attitude_control_(false)
+, traj_use_position_control_(declare_parameter("traj_use_position_control", false))
 , odom_ready_(false)
 , vel_initialized_(false)
 , has_final_setpoint_(false)
@@ -199,6 +200,9 @@ OffboardFSM::OffboardFSM(int drone_id)
   RCLCPP_INFO(get_logger(),
               "FSM drone %d: alt=%.2fm, goto_vel=%.2fm/s, land_vel=%.2fm/s, land_time=%.1fs, wait=%.1fs",
               drone_id_, takeoff_alt_, goto_max_vel_, landing_max_vel_, landing_time_s_, end_traj_wait_time_);
+  RCLCPP_INFO(get_logger(),
+              "TRAJ control mode: %s",
+              traj_use_position_control_ ? "POSITION" : "RATE");
 
   // PX4 namespace
   px4_ns_ = (drone_id_ == 0) ? "/fmu/" :
@@ -287,7 +291,12 @@ void OffboardFSM::state_cmd_cb(const std_msgs::msg::Int32::SharedPtr msg)
 
   if (new_state == FsmState::TRAJ) {
     state_start_time_     = now();
-    use_attitude_control_ = true;
+    // Set control mode based on parameter:
+    // false = use position control (external node publishes TrajectorySetpoint)
+    // true = use rate control (external node publishes VehicleRatesSetpoint)
+    use_attitude_control_ = !traj_use_position_control_;
+    RCLCPP_INFO(get_logger(), "Entering TRAJ state with %s control", 
+                traj_use_position_control_ ? "POSITION" : "RATE");
   }
 
   if (new_state == FsmState::END_TRAJ) {
@@ -426,6 +435,8 @@ void OffboardFSM::start_mjerk_segment(const Eigen::Vector3d& p_target,
 
 void OffboardFSM::publish_current_setpoint()
 {
+  // In TRAJ state with rate control, external node publishes rates, so we don't publish anything
+  // In TRAJ state with position control, external node publishes trajectory, so we don't publish either
   if (current_state_ == FsmState::TRAJ) {
     return;
   }
@@ -827,11 +838,22 @@ void OffboardFSM::publish_offboard_mode()
   bool has_active_seg = active_seg_.has_value();
   
   if (current_state_ == FsmState::TRAJ) {
-    m.position     = false;
-    m.velocity     = false;
-    m.acceleration = false;
-    m.attitude     = false;
-    m.body_rate    = true;
+    // TRAJ state control mode is determined by parameter
+    if (traj_use_position_control_) {
+      // Position control mode (for trajectory tracking applications)
+      m.position     = true;
+      m.velocity     = false;
+      m.acceleration = false;
+      m.attitude     = false;
+      m.body_rate    = false;
+    } else {
+      // Rate control mode (for neural network control)
+      m.position     = false;
+      m.velocity     = false;
+      m.acceleration = false;
+      m.attitude     = false;
+      m.body_rate    = true;
+    }
   } else if (has_active_seg) {
     m.position     = true;
     m.velocity     = false;

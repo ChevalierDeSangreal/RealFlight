@@ -3,7 +3,7 @@
 ## 1. 编译
 
 ```bash
-cd ~/wangzimo/realflight_ws
+cd ~/wangzimo/RealFlight
 colcon build --packages-select track_test
 source install/setup.bash
 ```

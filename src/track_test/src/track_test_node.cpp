@@ -59,31 +59,35 @@ TrackTestNode::TrackTestNode(int drone_id)
   , attitude_ready_(false)
   , target_x_(0.0)
   , target_y_(0.0)
-  , target_z_(2.0)
+  , target_z_(0.0)
   , target_vx_(0.0)
   , target_vy_(0.0)
   , target_vz_(0.0)
-  , initial_target_x_(0.0)
-  , initial_target_y_(0.0)
-  , initial_target_z_(0.0)
   , use_neural_control_(false)
   , current_action_(4, 0.0f)  // Initialize with zero action [thrust, omega_x, omega_y, omega_z]
   , step_counter_(0)           // Initialize step counter
 {
   // Parameters
   hover_duration_   = this->declare_parameter("hover_duration", 3.0);  // TRAJ control duration: 3.0s
-  hover_thrust_     = this->declare_parameter("hover_thrust", 0.581);
+  hover_thrust_     = this->declare_parameter("hover_thrust", 0.254);  // Match hover_test (lower thrust for neural control)
   mode_stabilization_delay_ = this->declare_parameter("mode_stabilization_delay", 0.6);  // Wait 0.6s for mode switch
-  action_update_period_ = this->declare_parameter("action_update_period", 0.1);  // 10 Hz for NN inference
+  action_update_period_ = this->declare_parameter("action_update_period", 0.02);  // 50 Hz for NN inference
   control_send_period_  = this->declare_parameter("control_send_period", 0.01);  // 100 Hz for control commands
   use_neural_control_ = this->declare_parameter("use_neural_control", true);
   model_path_       = this->declare_parameter("model_path", "");
-  target_x_         = this->declare_parameter("target_x", 0.0);
-  target_y_         = this->declare_parameter("target_y", 0.0);
-  target_z_         = this->declare_parameter("target_z", 2.0);
-  target_vx_        = this->declare_parameter("target_vx", 0.0);
-  target_vy_        = this->declare_parameter("target_vy", 0.0);
-  target_vz_        = this->declare_parameter("target_vz", 0.0);
+  
+  // Target generation parameters
+  use_target_topic_ = this->declare_parameter("use_target_topic", false);
+  target_position_topic_ = this->declare_parameter("target_position_topic", "/target/position");
+  target_velocity_topic_ = this->declare_parameter("target_velocity_topic", "/target/velocity");
+  target_offset_distance_ = this->declare_parameter("target_offset_distance", 1.0);  // 默认正前方1米
+  
+  // Initialize target generator
+  target_generator_ = std::make_unique<TargetGenerator>(
+    this, 
+    use_target_topic_,
+    target_position_topic_,
+    target_velocity_topic_);
   
   // PX4 namespace
   px4_namespace_ = get_px4_namespace(drone_id_);
@@ -103,9 +107,16 @@ TrackTestNode::TrackTestNode(int drone_id)
   RCLCPP_INFO(this->get_logger(),
               "  - Control send period: %.3f s (%.1f Hz)", control_send_period_, 1.0/control_send_period_);
   RCLCPP_INFO(this->get_logger(),
-              "  - Target initial position: [%.2f, %.2f, %.2f]", target_x_, target_y_, target_z_);
-  RCLCPP_INFO(this->get_logger(),
-              "  - Target velocity: [%.2f, %.2f, %.2f] m/s", target_vx_, target_vy_, target_vz_);
+              "  - Target mode: %s", use_target_topic_ ? "ROS2 Topic" : "Static (front of drone)");
+  if (use_target_topic_) {
+    RCLCPP_INFO(this->get_logger(),
+                "    - Position topic: %s", target_position_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(),
+                "    - Velocity topic: %s", target_velocity_topic_.c_str());
+  } else {
+    RCLCPP_INFO(this->get_logger(),
+                "    - Offset distance: %.2f m (in front of drone)", target_offset_distance_);
+  }
   RCLCPP_INFO(this->get_logger(), 
               "  - PX4 namespace: %s", px4_namespace_.c_str());
   
@@ -158,10 +169,10 @@ TrackTestNode::TrackTestNode(int drone_id)
     std::bind(&TrackTestNode::vehicle_rates_setpoint_callback, this, std::placeholders::_1));
   
   // Two-timer architecture to avoid accumulated timing errors:
-  // 1. Action update timer (10Hz): Neural network inference
+  // 1. Action update timer (50Hz): Neural network inference
   // 2. Control send timer (100Hz): High-frequency command transmission
   
-  // Action update timer (10Hz for neural network inference)
+  // Action update timer (50Hz for neural network inference)
   action_update_timer_ = rclcpp::create_timer(
     this,
     this->get_clock(),
@@ -228,12 +239,22 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_x_ = current_x_;
     hover_y_ = current_y_;
     hover_z_ = current_z_;
-    hover_yaw_ = 0.0;  // Face north
+    hover_yaw_ = current_yaw_;  // 使用当前yaw角
     
-    // Save initial target position for moving target
-    initial_target_x_ = target_x_;
-    initial_target_y_ = target_y_;
-    initial_target_z_ = target_z_;
+    // Initialize target using target generator
+    if (!use_target_topic_) {
+      // 静态模式: 在无人机正前方生成目标
+      target_generator_->initialize_static_target(
+        current_x_, current_y_, current_z_, current_yaw_, target_offset_distance_);
+      
+      // 获取生成的目标位置
+      target_generator_->get_target_position(target_x_, target_y_, target_z_);
+      target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
+    } else {
+      // 话题模式: 等待话题数据
+      RCLCPP_INFO(this->get_logger(), 
+                  "等待目标位置话题: %s", target_position_topic_.c_str());
+    }
     
     // Set initial hover action (will be used during stabilization period)
     {
@@ -248,8 +269,8 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
                 "🚁 FSM entered TRAJ - Waiting %.2f s for mode stabilization...", 
                 mode_stabilization_delay_);
     RCLCPP_INFO(this->get_logger(),
-                "   Start pos: [%.2f, %.2f, %.2f] | Target: [%.2f, %.2f, %.2f]",
-                hover_x_, hover_y_, hover_z_, target_x_, target_y_, target_z_);
+                "   Drone pos: [%.2f, %.2f, %.2f] yaw: %.2f rad | Target: [%.2f, %.2f, %.2f]",
+                hover_x_, hover_y_, hover_z_, hover_yaw_, target_x_, target_y_, target_z_);
   }
 
   // Exited TRAJ, reset
@@ -321,7 +342,7 @@ void TrackTestNode::vehicle_rates_setpoint_callback(
   }
 }
 
-// Action update callback (10Hz): Neural network inference
+// Action update callback (50Hz): Neural network inference
 void TrackTestNode::action_update_callback()
 {
   if (!odom_ready_) {
@@ -335,10 +356,18 @@ void TrackTestNode::action_update_callback()
     // Calculate elapsed time from timestamp
     double elapsed = (this->now() - hover_start_time_).seconds();
     
-    // Update moving target position based on velocity
-    target_x_ = initial_target_x_ + target_vx_ * elapsed;
-    target_y_ = initial_target_y_ + target_vy_ * elapsed;
-    target_z_ = initial_target_z_ + target_vz_ * elapsed;
+    // Update target position from target generator
+    if (use_target_topic_) {
+      // 话题模式: 从target_generator获取最新目标位置
+      if (target_generator_->is_target_ready()) {
+        target_generator_->get_target_position(target_x_, target_y_, target_z_);
+        target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
+      } else {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                             "等待目标位置话题数据...");
+      }
+    }
+    // 静态模式: 目标位置已在初始化时设置，保持不变
     
     // Check if TRAJ control duration is complete
     if (elapsed >= hover_duration_) {
@@ -371,68 +400,72 @@ void TrackTestNode::action_update_callback()
                     "✅ Mode stabilized (%.2f s) - Initializing neural control...",
                     elapsed);
         
-        // Get initial observation to fill the buffer (must match training!)
-        std::vector<float> initial_obs = get_observation();
-        
-        // Normalize observation to [-1, 1] range (CRITICAL: must match training!)
-        normalize_observation(initial_obs);
+        // Initialize buffer with zero observation vector
+        std::vector<float> initial_obs_for_reset(OBS_DIM, 0.0f);  // Zero observation vector for buffer initialization
         
         // Hovering action (normalized): [thrust, omega_x=0, omega_y=0, omega_z=0]
         // Map hover_thrust_ from [0,1] to [-1,1] range for neural network input
         float hovering_thrust_normalized = 2.0f * hover_thrust_ - 1.0f;
         std::vector<float> hovering_action = {hovering_thrust_normalized, 0.0f, 0.0f, 0.0f};
         
-        policy_->reset(initial_obs, hovering_action);
+        policy_->reset(initial_obs_for_reset, hovering_action);
         
-        // Print input buffer for step 0 (after reset, before first inference)
-        if (policy_) {
-          std::vector<float> buffer_data = policy_->get_flattened_buffer();
-          RCLCPP_INFO(this->get_logger(), "");
-          RCLCPP_INFO(this->get_logger(), "========== STEP 0 INPUT BUFFER (130 dims) ==========");
-          RCLCPP_INFO(this->get_logger(), "Buffer size: %zu", buffer_data.size());
+        // // Print input buffer for step 0 (after reset, before first inference)
+        // if (policy_) {
+        //   std::vector<float> buffer_data = policy_->get_flattened_buffer();
+        //   RCLCPP_INFO(this->get_logger(), "");
+        //   RCLCPP_INFO(this->get_logger(), "========== STEP 0 INPUT BUFFER (650 dims) ==========");
+        //   RCLCPP_INFO(this->get_logger(), "Buffer size: %zu", buffer_data.size());
           
-          // Print buffer in format: [action(4), obs(9)] * 10
-          constexpr int BUFFER_SIZE = 10;
-          constexpr int ACTION_DIM = 4;
-          constexpr int OBS_DIM = 9;
-          for (int i = 0; i < BUFFER_SIZE; ++i) {
-            int base_idx = i * (ACTION_DIM + OBS_DIM);
-            RCLCPP_INFO(this->get_logger(), 
-                        "  [Step %d] action=[%.6f, %.6f, %.6f, %.6f], obs=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f]",
-                        i,
-                        buffer_data[base_idx + 0], buffer_data[base_idx + 1], 
-                        buffer_data[base_idx + 2], buffer_data[base_idx + 3],  // action
-                        buffer_data[base_idx + 4], buffer_data[base_idx + 5], buffer_data[base_idx + 6],  // obs[0:3]
-                        buffer_data[base_idx + 7], buffer_data[base_idx + 8], buffer_data[base_idx + 9],  // obs[3:6]
-                        buffer_data[base_idx + 10], buffer_data[base_idx + 11], buffer_data[base_idx + 12]); // obs[6:9]
-          }
+        //   // Print buffer in format: [action(4), obs(9)] * 50
+        //   constexpr int BUFFER_SIZE = 50;
+        //   constexpr int ACTION_DIM = 4;
+        //   constexpr int OBS_DIM = 9;
+        //   for (int i = 0; i < BUFFER_SIZE; ++i) {
+        //     int base_idx = i * (ACTION_DIM + OBS_DIM);
+        //     RCLCPP_INFO(this->get_logger(), 
+        //                 "  [Step %d] action=[%.6f, %.6f, %.6f, %.6f], obs=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f]",
+        //                 i,
+        //                 buffer_data[base_idx + 0], buffer_data[base_idx + 1], 
+        //                 buffer_data[base_idx + 2], buffer_data[base_idx + 3],  // action
+        //                 buffer_data[base_idx + 4], buffer_data[base_idx + 5], buffer_data[base_idx + 6],  // obs[0:3]
+        //                 buffer_data[base_idx + 7], buffer_data[base_idx + 8], buffer_data[base_idx + 9],  // obs[3:6]
+        //                 buffer_data[base_idx + 10], buffer_data[base_idx + 11], buffer_data[base_idx + 12]); // obs[6:9]
+        //   }
           
-          // Print flattened buffer as single line (for easy copy-paste)
-          RCLCPP_INFO(this->get_logger(), "Flattened buffer (single line, 130 values):");
-          std::string buffer_str = "  [";
-          for (size_t i = 0; i < buffer_data.size(); ++i) {
-            char num_str[32];
-            snprintf(num_str, sizeof(num_str), "%.6f", buffer_data[i]);
-            buffer_str += num_str;
-            if (i < buffer_data.size() - 1) {
-              buffer_str += ", ";
-            }
-          }
-          buffer_str += "]";
-          // Split long string into multiple log lines for readability
-          const size_t max_line_length = 200;
-          size_t pos = 0;
-          while (pos < buffer_str.length()) {
-            size_t end_pos = std::min(pos + max_line_length, buffer_str.length());
-            std::string line = buffer_str.substr(pos, end_pos - pos);
-            RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
-            pos = end_pos;
-          }
-          RCLCPP_INFO(this->get_logger(), "===================================================");
-        }
+        //   // Print flattened buffer as single line (for easy copy-paste)
+        //   RCLCPP_INFO(this->get_logger(), "Flattened buffer (single line, 650 values):");
+        //   std::string buffer_str = "  [";
+        //   for (size_t i = 0; i < buffer_data.size(); ++i) {
+        //     char num_str[32];
+        //     snprintf(num_str, sizeof(num_str), "%.6f", buffer_data[i]);
+        //     buffer_str += num_str;
+        //     if (i < buffer_data.size() - 1) {
+        //       buffer_str += ", ";
+        //     }
+        //   }
+        //   buffer_str += "]";
+        //   // Split long string into multiple log lines for readability
+        //   const size_t max_line_length = 200;
+        //   size_t pos = 0;
+        //   while (pos < buffer_str.length()) {
+        //     size_t end_pos = std::min(pos + max_line_length, buffer_str.length());
+        //     std::string line = buffer_str.substr(pos, end_pos - pos);
+        //     RCLCPP_INFO(this->get_logger(), "%s", line.c_str());
+        //     pos = end_pos;
+        //   }
+        //   RCLCPP_INFO(this->get_logger(), "===================================================");
+        // }
         
-        // Immediately run inference to get first action
-        std::vector<float> first_action = policy_->get_action(initial_obs);
+        // Get ACTUAL observation for first inference
+        std::vector<float> obs_raw = get_observation();
+        
+        // Make a copy for normalization
+        std::vector<float> obs_normalized = obs_raw;
+        normalize_observation(obs_normalized);
+        
+        // Immediately run inference to get first action using normalized observation
+        std::vector<float> first_action = policy_->get_action(obs_normalized);
         
         // Update current_action_ immediately (thread-safe)
         {
@@ -441,50 +474,48 @@ void TrackTestNode::action_update_callback()
         }
         
         // Print first action details (same format as update_neural_action)
-        // Get raw observation (before normalization) for printing
-        std::vector<float> obs_raw = get_observation();
         double elapsed = (this->now() - hover_start_time_).seconds();
         
-        // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
+        // // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
         
-        // 1. 步序号 (this is step 1, the first inference after reset)
-        RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
-        RCLCPP_INFO(this->get_logger(), "========== STEP 0 (t=%.3fs) ==========", elapsed);
+        // // 1. 步序号 (this is step 1, the first inference after reset)
+        // RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
+        // RCLCPP_INFO(this->get_logger(), "========== STEP 0 (t=%.3fs) ==========", elapsed);
         
-        // 2. 原始观测（未归一化）
-        RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
-                    obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
-                    obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
-                    obs_raw[6], obs_raw[7], obs_raw[8]);   // target_pos_body
+        // // 2. 原始观测（未归一化）
+        // RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
+        //             obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
+        //             obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
+        //             obs_raw[6], obs_raw[7], obs_raw[8]);   // target_pos_body
         
-        // 3. 归一化后的观测（输入给神经网络的）
-        RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
-                    initial_obs[0], initial_obs[1], initial_obs[2],    // v_body
-                    initial_obs[3], initial_obs[4], initial_obs[5],    // g_body
-                    initial_obs[6], initial_obs[7], initial_obs[8]);   // target_pos_body
+        // // 3. 归一化后的观测（输入给神经网络的）
+        // RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
+        //             obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
+        //             obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
+        //             obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_pos_body
         
-        // 4. 网络原始输出（[-1, 1]范围的tanh输出）
-        float thrust_raw = first_action[0];
-        float omega_x_norm = first_action[1];
-        float omega_y_norm = first_action[2];
-        float omega_z_norm = first_action[3];
+        // // 4. 网络原始输出（[-1, 1]范围的tanh输出）
+        // float thrust_raw = first_action[0];
+        // float omega_x_norm = first_action[1];
+        // float omega_y_norm = first_action[2];
+        // float omega_z_norm = first_action[3];
         
-        RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
-                    thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
+        // RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
+        //             thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
         
-        // 5. 归一化后输出（denormalized到物理量）
-        constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
-        constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
-        constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
-        float roll_rate = omega_x_norm * OMEGA_MAX_X;
-        float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
-        float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
-        float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
+        // // 5. 归一化后输出（denormalized到物理量）
+        // constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
+        // constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
+        // constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
+        // float roll_rate = omega_x_norm * OMEGA_MAX_X;
+        // float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
+        // float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
+        // float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
         
-        RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
-                    thrust_normalized, roll_rate, pitch_rate, yaw_rate);
+        // RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
+        //             thrust_normalized, roll_rate, pitch_rate, yaw_rate);
         
-        RCLCPP_INFO(this->get_logger(), "=====================================");
+        // RCLCPP_INFO(this->get_logger(), "=====================================");
         
         neural_control_ready_ = true;
         RCLCPP_INFO(this->get_logger(), 
@@ -606,7 +637,7 @@ std::vector<float> TrackTestNode::get_observation()
   return obs;
 }
 
-// Update neural network action (called at 10Hz)
+// Update neural network action (called at 50Hz)
 void TrackTestNode::update_neural_action()
 {
   // Increment step counter
@@ -622,7 +653,7 @@ void TrackTestNode::update_neural_action()
   normalize_observation(obs_normalized);
   
   // Get action from neural network
-  // Note: With separate 10Hz timer, we don't need internal action repeat anymore
+  // Note: With separate 50Hz timer, we don't need internal action repeat anymore
   std::vector<float> action = policy_->get_action(obs_normalized);
   
   // Update current action (thread-safe)
@@ -634,9 +665,9 @@ void TrackTestNode::update_neural_action()
   // Calculate elapsed time
   double elapsed = (this->now() - hover_start_time_).seconds();
   
-  // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
+  // // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
   
-  // 1. 步序号
+  // // 1. 步序号
   RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
   RCLCPP_INFO(this->get_logger(), "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
   
@@ -646,11 +677,11 @@ void TrackTestNode::update_neural_action()
               obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
               obs_raw[6], obs_raw[7], obs_raw[8]);   // target_pos_body
   
-  // 3. 归一化后的观测（输入给神经网络的）
-  RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
-              obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
-              obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
-              obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_pos_body
+  // // 3. 归一化后的观测（输入给神经网络的）
+  // RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
+  //             obs_normalized[0], obs_normalized[1], obs_normalized[2],    // v_body
+  //             obs_normalized[3], obs_normalized[4], obs_normalized[5],    // g_body
+  //             obs_normalized[6], obs_normalized[7], obs_normalized[8]);   // target_pos_body
   
   // 4. 网络原始输出（[-1, 1]范围的tanh输出）
   float thrust_raw = action[0];
@@ -661,17 +692,17 @@ void TrackTestNode::update_neural_action()
   RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
               thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
   
-  // 5. 归一化后输出（denormalized到物理量）
-  constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
-  constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
-  constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
-  float roll_rate = omega_x_norm * OMEGA_MAX_X;
-  float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
-  float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
-  float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
+  // // 5. 归一化后输出（denormalized到物理量）
+  // constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
+  // constexpr float OMEGA_MAX_Y = 0.5f;  // rad/s
+  // constexpr float OMEGA_MAX_Z = 0.5f;  // rad/s
+  // float roll_rate = omega_x_norm * OMEGA_MAX_X;
+  // float pitch_rate = omega_y_norm * OMEGA_MAX_Y;
+  // float yaw_rate = omega_z_norm * OMEGA_MAX_Z;
+  // float thrust_normalized = (thrust_raw + 1.0f) * 0.5f;  // Map [-1,1] to [0,1]
   
-  RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
-              thrust_normalized, roll_rate, pitch_rate, yaw_rate);
+  // RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
+  //             thrust_normalized, roll_rate, pitch_rate, yaw_rate);
   
   RCLCPP_INFO(this->get_logger(), "=====================================");
 }

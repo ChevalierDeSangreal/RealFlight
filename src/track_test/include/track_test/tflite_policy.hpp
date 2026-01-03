@@ -13,10 +13,10 @@
 #include "tensorflow/lite/model.h"
 
 // Constants from model_info.txt
-constexpr int BUFFER_SIZE = 10;        // 动作-状态缓冲区大小
+constexpr int BUFFER_SIZE = 50;        // 动作-状态缓冲区大小（50Hz版本）
 constexpr int ACTION_DIM = 4;          // 动作维度（四旋翼控制指令）
 constexpr int OBS_DIM = 9;             // 观测维度（机体系速度3 + 机体系重力3 + 机体系目标位置3）
-constexpr int INPUT_DIM = BUFFER_SIZE * (ACTION_DIM + OBS_DIM);  // 总输入维度 = 10*(4+9) = 130
+constexpr int INPUT_DIM = BUFFER_SIZE * (ACTION_DIM + OBS_DIM);  // 总输入维度 = 50*(4+9) = 650
 
 /**
  * 动作-状态缓冲区类
@@ -176,7 +176,7 @@ public:
         // 清空buffer并用悬停动作+初始观测填充（与训练代码一致）
         buffer_.reset();  // 先清空
         
-        // 用悬停动作和初始观测填充整个buffer（10个历史步）
+        // 用悬停动作和初始观测填充整个buffer（50个历史步）
         for (int i = 0; i < BUFFER_SIZE; ++i) {
             buffer_.update(initial_obs, hovering_action);
         }
@@ -194,7 +194,7 @@ public:
     
     /**
      * 获取当前展平的缓冲区数据（用于调试）
-     * @return 展平的缓冲区数据 [action(4), obs(9)] * BUFFER_SIZE
+     * @return 展平的缓冲区数据 [action(4), obs(9)] * BUFFER_SIZE (650 dims)
      */
     std::vector<float> get_flattened_buffer() const {
         return buffer_.get_flattened_buffer();

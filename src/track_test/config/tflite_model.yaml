@@ -8,36 +8,36 @@
     
     # Model path (onboard mode - absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/radxa/RealFlight/src/track_test/config/trackVer8_policy_stabler.tflite"
+    model_path: "/home/radxa/RealFlight/src/track_test/config/trackVer12_policy.tflite"
     
     # Model path (SITL mode - absolute path)
-    model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/track_test/config/trackVer8_policy_stabler.tflite"
+    model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/track_test/config/trackVer12_policy.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/track_test/config/trackVer8_policy_stabler.tflite"
     
-    # Control timing
-    timer_period: 0.01  # 100 Hz control loop (matches model dt=0.01)
+    # Control timing (50Hz version - matches 50-step buffer)
+    action_update_period: 0.02  # 50 Hz neural network inference (dt=0.02s)
+    control_send_period: 0.01    # 100 Hz control loop for command transmission
     hover_duration: 10.0  # Duration to run trajectory control [seconds] (+ 1s wait = 4s total)
     
     # Fallback hover parameters (used if neural control fails)
     # hover_thrust: 0.541  # Normalized thrust for hovering [0.0-1.0]
     hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
 
-    # Target position/trajectory (in NED frame, meters)
-    # Target is 1m in front of drone at GOTO position [-1.5, 0.0, -1.5]
-    # Drone faces north (yaw=0), so target is along +X direction
-    target_x: 2.01  # 1.5 + 1.0 = 2.5 (1m forward from drone)
-    target_y: 0.0   # No lateral offset
-    target_z: -1.21  # Same altitude as drone (NED: negative = above ground)
+    # ========== Target Generation Configuration ==========
+    # Two modes:
+    # 1. Static mode (use_target_topic: false): Generate fixed target in front of drone when entering TRAJ mode
+    # 2. Topic mode (use_target_topic: true): Subscribe to ROS2 topic for real-time target position
     
-    # Target velocity (optional, for tracking moving targets)
-    target_vx: 0.0
-    target_vy: 0.0
-    target_vz: 0.0
+    use_target_topic: false  # false=静态模式, true=话题模式
+    target_position_topic: "/target/position"  # 目标位置话题 (geometry_msgs/PointStamped)
+    target_velocity_topic: "/target/velocity"  # 目标速度话题 (geometry_msgs/TwistStamped)
+    target_offset_distance: 1.0  # 静态模式：目标距离无人机的距离[m]（正前方）
     
 # Notes:
-# - The model expects observations at 100 Hz (dt=0.01s)
-# - Action repeat (10 steps) is handled internally in the TFLitePolicyInference class
-# - Model input: 130D = 10 history steps × (4 action dims + 9 obs dims) per step
-#   - Buffer format: [action_t-9, obs_t-9, action_t-8, obs_t-8, ..., action_t, obs_t]
+# - The model expects observations at 50 Hz (dt=0.02s) for this configuration
+# - Action update happens at 50Hz, control commands are sent at 100Hz
+# - Model input: 650D = 50 history steps × (4 action dims + 9 obs dims) per step
+#   - Buffer format: [action_t-49, obs_t-49, action_t-48, obs_t-48, ..., action_t, obs_t]
 # - Model output: 4D [thrust, omega_x, omega_y, omega_z]
 # - All outputs are in range [-1, 1] due to tanh activation
 # - Observation space (9D, body frame):

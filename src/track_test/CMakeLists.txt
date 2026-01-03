@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(offboard_state_machine REQUIRED)
 
@@ -57,11 +58,13 @@ include_directories(
 add_executable(track_test_node
   src/track_test_node.cpp
   src/track_test_main.cpp
+  src/target_generator.cpp
 )
 
 ament_target_dependencies(track_test_node
   rclcpp
   std_msgs
+  geometry_msgs
   px4_msgs
   offboard_state_machine
 )
@@ -162,6 +165,12 @@ install(DIRECTORY
 install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
+)
+
+# Install scripts
+install(PROGRAMS
+  scripts/publish_target.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

@@ -182,6 +182,7 @@ private:
   
   // Control mode
   bool use_attitude_control_;
+  bool traj_use_position_control_;  // If true, TRAJ uses position control; if false, uses rate control
   
   // PX4 status
   uint8_t nav_state_;

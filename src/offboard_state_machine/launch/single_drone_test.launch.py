@@ -6,9 +6,12 @@ Launches one drone that takes off to 1.5m and hovers at the takeoff position
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.substitutions import EnvironmentVariable
+from launch.substitutions import EnvironmentVariable, PathJoinSubstitution
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
+from launch_ros.substitutions import FindPackageShare
+import os
+import yaml
 
 def generate_launch_description() -> LaunchDescription:
     """
@@ -33,57 +36,66 @@ def generate_launch_description() -> LaunchDescription:
         description='Operation mode: onboard (default) or sitl'
     )
     
+    config_file_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value=PathJoinSubstitution([
+            FindPackageShare('offboard_state_machine'),
+            'config',
+            'fsm_hover.yaml'
+        ]),
+        description='Path to the configuration YAML file'
+    )
+    
     return LaunchDescription([
         drone_id_arg,
         mode_arg,
+        config_file_arg,
         OpaqueFunction(function=launch_setup),
     ])
 
 
 def launch_setup(context, *args, **kwargs):
     """Setup function to dynamically configure based on mode."""
-    drone_id = LaunchConfiguration('drone_id')
+    drone_id_config = LaunchConfiguration('drone_id')
     mode = LaunchConfiguration('mode')
+    config_file = LaunchConfiguration('config_file')
     
-    # Get the actual mode value from context
+    # Get the actual values from context
     mode_value = context.perform_substitution(mode)
+    config_file_path = context.perform_substitution(config_file)
+    drone_id_value = context.perform_substitution(drone_id_config)
+    
+    # Expand ~ to home directory
+    config_file_path = os.path.expanduser(config_file_path)
     
     # Set use_sim_time based on mode
     use_sim_time = (mode_value == 'sitl')
     
-    takeoff_altitude = 1.2  # meters above ground
+    # Load config file and prepare parameters
+    if not os.path.exists(config_file_path):
+        raise RuntimeError(f"Config file not found: {config_file_path}")
     
-    # In NED frame: x=North, y=East, z=Down
-    # Takeoff position: hover at origin with 1.2m altitude
-    goto_x = 0.0   
-    goto_y = 0.0    
-    goto_z = -takeoff_altitude  # NED: negative means up
+    with open(config_file_path, 'r') as f:
+        config_data = yaml.safe_load(f)
+    
+    # The YAML key is '/**' not '**'
+    yaml_key = '/**' if '/**' in config_data else '**'
+    
+    if yaml_key not in config_data or 'ros__parameters' not in config_data[yaml_key]:
+        raise RuntimeError(f"Invalid YAML structure in config file: {config_file_path}")
+    
+    ros_params = config_data[yaml_key]['ros__parameters'].copy()
+    
+    # Override drone_id and use_sim_time from launch arguments
+    ros_params['drone_id'] = int(drone_id_value)
+    ros_params['use_sim_time'] = use_sim_time
     
     fsm_node = Node(
         package="offboard_state_machine",
         executable="offboard_fsm_node",
-        name=["offboard_fsm_node_", drone_id],
+        name=["offboard_fsm_node_", drone_id_config],
         output="screen",
-        parameters=[{
-            "drone_id": drone_id,
-            "takeoff_alt": takeoff_altitude,
-            "takeoff_time": 10.0,        # seconds to reach takeoff altitude
-            "climb_rate": 1.0,          # m/s (will be overridden by takeoff_alt/takeoff_time)
-            "landing_time": 2.0,        # seconds for landing
-            'goto_x': goto_x,             # GOTO 
-            'goto_y': goto_y,             
-            'goto_z': goto_z,            
-            'goto_tol': 0.05,           # meters
-            'goto_max_vel': 1.0,        # m/s
-            'goto_accel_time': 3.0,    # seconds to reach max velocity
-            "num_drones": 1,            # single drone
-            "timer_period": 0.02,       # 50 Hz control loop
-            "alt_tol": 0.01,            # altitude tolerance in meters
-            "inward_offset": 0.0,       # no offset for single drone at origin
-            "payload_offset_x": 0.0,    # no payload offset
-            "payload_offset_y": 0.00,  # match goto_y for hover
-            "use_sim_time": use_sim_time,
-        }],
+        parameters=[ros_params],
     )
 
     return [fsm_node]

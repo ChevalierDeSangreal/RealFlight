@@ -14,9 +14,10 @@
     # model_path: "/home/radxa/RealFlight/src/hover_test/config/hoverVer0_policy.tflite"
     
     # Model path (SITL mode - absolute path)
-    model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer2_policy.tflite"
-    # model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer1_policy_stable.tflite"
-    # model_path_sitl: "/home/carlson/wangzimo/realflight_ws/src/hover_test/config/hoverVer0_policy.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer2_policy.tflite"
+    model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/track_test/config/trackVer12_policy.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer1_policy_stable.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer0_policy.tflite"
     
     # Control timing (50Hz version)
     action_update_period: 0.02  # 50 Hz neural network inference (dt=0.02s)

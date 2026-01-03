@@ -60,7 +60,7 @@ set(TFLITE_LIB_DIR "/your/custom/path/lib" CACHE PATH "TensorFlow Lite library d
 ## 编译
 
 ```bash
-cd /home/carlson/wangzimo/realflight_ws
+cd /home/carlson/wangzimo/RealFlight
 colcon build --packages-select hover_test
 source install/setup.bash
 ```
@@ -89,7 +89,7 @@ ros2 launch hover_test tflite_neural_control.launch.py \
 ```bash
 ros2 run hover_test hover_test_node 0 \
     --ros-args \
-    --params-file /home/carlson/wangzimo/realflight_ws/src/hover_test/config/tflite_model.yaml
+    --params-file /home/carlson/wangzimo/RealFlight/src/hover_test/config/tflite_model.yaml
 ```
 
 ## 配置文件说明

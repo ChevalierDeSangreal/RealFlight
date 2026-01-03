@@ -9,6 +9,7 @@
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include "offboard_state_machine/utils.hpp"
 #include "track_test/tflite_policy.hpp"
+#include "track_test/target_generator.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -106,16 +107,20 @@ private:
   bool local_position_ready_;
   bool attitude_ready_;
   
-  // Target state (目标位置/轨迹)
+  // Target generator (管理目标位置生成或订阅)
+  std::unique_ptr<TargetGenerator> target_generator_;
+  bool use_target_topic_;          // 是否使用ROS2话题订阅目标
+  std::string target_position_topic_;  // 目标位置话题名称
+  std::string target_velocity_topic_;  // 目标速度话题名称
+  double target_offset_distance_;  // 静态目标距离无人机的距离[m]
+  
+  // Target state (目标位置/轨迹) - from target_generator
   double target_x_;
   double target_y_;
   double target_z_;
   double target_vx_;
   double target_vy_;
   double target_vz_;
-  double initial_target_x_;  // Initial target position for moving target
-  double initial_target_y_;
-  double initial_target_z_;
   
   // Neural network policy
   std::unique_ptr<TFLitePolicyInference> policy_;
