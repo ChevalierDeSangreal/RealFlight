@@ -22,10 +22,10 @@
     # Control timing (50Hz version)
     action_update_period: 0.02  # 50 Hz neural network inference (dt=0.02s)
     control_send_period: 0.01    # 100 Hz control loop for command transmission
-    hover_duration: 10.0  # Duration to run hover control [seconds]
+    hover_duration: 15.0  # Duration to run hover control [seconds]
     
     # Fallback hover parameters (used if neural control fails)
-    hover_thrust: 0.22  # Normalized thrust for hovering [0.0-1.0]
+    hover_thrust: 0.31  # Normalized thrust for hovering [0.0-1.0]
     # hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
     
     # Mode stabilization delay
@@ -38,8 +38,8 @@
     target_z: -1.21  # Target Z position (NED: negative = above ground)
     
     # Safety thresholds for distance to target
-    safety_threshold_horizontal: 1.4  # Maximum horizontal distance to target [meters]
-    safety_threshold_vertical: 1.0    # Maximum vertical distance to target [meters]
+    safety_threshold_horizontal: 1.0  # Maximum horizontal distance to target [meters]
+    safety_threshold_vertical: 0.7   # Maximum vertical distance to target [meters]
     
 # Notes:
 # - The model expects observations at 50 Hz (dt=0.02s) for this configuration

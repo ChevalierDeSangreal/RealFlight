@@ -383,6 +383,27 @@ void HoverTestNode50Hz::action_update_callback()
     
     // Initialize neural control after stabilization delay
     if (!neural_control_ready_ && elapsed >= mode_stabilization_delay_) {
+      // Check if neural network is required but not available
+      if (use_neural_control_ && (!policy_ || !local_position_ready_ || !attitude_ready_)) {
+        RCLCPP_ERROR(this->get_logger(), 
+                     "❌ NEURAL NETWORK NOT AVAILABLE - Terminating TRAJ state!");
+        if (!policy_) {
+          RCLCPP_ERROR(this->get_logger(), 
+                       "   Neural network policy is not initialized!");
+        }
+        if (!local_position_ready_) {
+          RCLCPP_ERROR(this->get_logger(), 
+                       "   Local position data is not ready!");
+        }
+        if (!attitude_ready_) {
+          RCLCPP_ERROR(this->get_logger(), 
+                       "   Attitude data is not ready!");
+        }
+        send_state_command(static_cast<int>(FsmState::END_TRAJ));
+        hover_completed_ = true;
+        return;
+      }
+      
       if (use_neural_control_ && policy_ && local_position_ready_ && attitude_ready_) {
         RCLCPP_INFO(this->get_logger(),
                     "✅ Mode stabilized (%.2f s) - Initializing neural control...",
@@ -464,7 +485,7 @@ void HoverTestNode50Hz::action_update_callback()
                     "🚀 Neural control active! (effective duration: %.1f s)",
                     hover_duration_ - elapsed);
       } else {
-        // Fallback mode
+        // Fallback mode (use_neural_control_ is false)
         neural_control_ready_ = true;
         RCLCPP_WARN(this->get_logger(),
                     "Neural control not available - using fallback hover");

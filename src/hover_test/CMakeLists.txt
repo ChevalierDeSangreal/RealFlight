@@ -50,10 +50,22 @@ message(STATUS "TensorFlow Lite found:")
 message(STATUS "  - Include: ${TFLITE_INCLUDE_DIR}")
 message(STATUS "  - Library: ${TFLITE_LIB_DIR}/libtensorflow-lite.a")
 
-include_directories(
-  include
-  ${TFLITE_INCLUDE_DIR}
-)
+# Add include directories based on build environment
+if(BUILD_ENV STREQUAL "SITL")
+    include_directories(
+      include
+      ${TFLITE_INCLUDE_DIR}
+    )
+else()
+    # REAL_HARDWARE environment: Add FlatBuffers and other dependency headers
+    include_directories(
+      include
+      ${TFLITE_INCLUDE_DIR}
+      ${TFLITE_BUILD_DIR}/flatbuffers/include
+      ${TFLITE_BUILD_DIR}/abseil-cpp
+      ${TFLITE_BUILD_DIR}/ruy
+    )
+endif()
 
 add_executable(hover_test_node
   src/hover_test_node.cpp

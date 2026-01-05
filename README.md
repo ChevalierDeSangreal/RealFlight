@@ -110,6 +110,32 @@ ros2 launch offboard_state_machine single_drone_test.launch.py drone_id:=0 mode:
 
 traj_test 包用于无人机轨迹跟踪测试，支持圆形轨迹飞行：
 
+#### 快速启动（推荐）
+
+使用 `start_traj.sh` 脚本一键启动状态机和轨迹测试节点（tmux会话）：
+
+```bash
+cd ~/wangzimo/RealFlight
+source ./install/setup.bash
+
+# 使用默认参数（drone_id=0, mode=onboard）
+./scripts/start_traj.sh
+
+# 指定无人机 ID 和模式
+./scripts/start_traj.sh 0 onboard    # 实机模式
+./scripts/start_traj.sh 0 sitl       # 仿真模式
+```
+
+脚本会在 tmux 会话中创建两个窗口：
+- **窗口 0 (fsm)**：状态机（offboard_state_machine）
+- **窗口 1 (traj_test)**：轨迹测试节点（traj_test）
+
+使用 `Ctrl+B` 然后 `D` 可以退出 tmux 会话（进程在后台继续运行），使用 `tmux attach -t traj_test` 可以重新连接。
+
+#### 手动启动
+
+分别启动状态机和轨迹测试节点：
+
 ```bash
 # 启动轨迹测试节点（默认配置）
 ros2 launch traj_test traj_test.launch.py drone_id:=0

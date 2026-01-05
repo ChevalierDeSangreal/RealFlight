@@ -181,7 +181,7 @@ offboard_state_machine 包支持两种运行模式：
 | `goto_z` | double | NaN | GOTO目标Z坐标（NED，负值表示高度） |
 | `goto_tol` | double | 0.1 | GOTO到达容差（米） |
 | `goto_max_vel` | double | 0.8 | GOTO最大速度（米/秒） |
-| `goto_accel_time` | double | 2.0 | GOTO加速时间（秒） |
+| `goto_duration` | double | 2.0 | GOTO最小持续时间（秒） |
 | `end_traj_wait_time` | double | 5.0 | END_TRAJ状态悬停时间（秒） |
 | `landing_time` | double | 5.0 | 降落时间（秒） |
 
