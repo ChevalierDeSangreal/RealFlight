@@ -218,16 +218,46 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
                 "HOVER detected, will start hover control in 2.0s");
   }
 
+  // Check if ready to send TRAJ command (after 2.0s delay)
   if (waiting_hover_ && !hover_started_ && !hover_completed_ &&
       (this->now() - hover_detect_time_).seconds() > 2.0) {
-    RCLCPP_INFO(this->get_logger(), "Commanding state machine to TRAJ state for hover control");
-    send_state_command(static_cast<int>(FsmState::TRAJ));
-    hover_command_sent_ = true;
-    hover_start_time_ = this->now();
+    
+    // 对于话题模式，需要等待目标数据就绪
+    if (use_target_topic_) {
+      if (target_generator_->is_target_ready()) {
+        // Target data ready, send TRAJ command
+        RCLCPP_INFO(this->get_logger(), 
+                    "Target topic data ready, sending TRAJ state command");
+        
+        // Get target position information for logging
+        target_generator_->get_target_position(target_x_, target_y_, target_z_);
+        target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
+        
+        RCLCPP_INFO(this->get_logger(), 
+                    "Target position: [%.2f, %.2f, %.2f], velocity: [%.2f, %.2f, %.2f]",
+                    target_x_, target_y_, target_z_, target_vx_, target_vy_, target_vz_);
+        
+        send_state_command(static_cast<int>(FsmState::TRAJ));
+        hover_command_sent_ = true;
+        hover_start_time_ = this->now();
+      } else {
+        // Target data not ready, print waiting message
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                             "Waiting for target position topic data: %s (target data not ready, will not enter TRAJ state)",
+                             target_position_topic_.c_str());
+      }
+    } else {
+      // Static mode, send TRAJ command directly
+      RCLCPP_INFO(this->get_logger(), 
+                  "Static mode - sending TRAJ state command for hover control");
+      send_state_command(static_cast<int>(FsmState::TRAJ));
+      hover_command_sent_ = true;
+      hover_start_time_ = this->now();
+    }
   }
 
   // TRAJ detected - capture current position but WAIT before starting neural control
-  if (state == FsmState::TRAJ && waiting_hover_ && !hover_started_) {
+  if (state == FsmState::TRAJ && (waiting_hover_ || hover_command_sent_) && !hover_started_) {
     hover_started_ = true;
     waiting_hover_ = false;
     hover_command_sent_ = false;
@@ -251,9 +281,17 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
       target_generator_->get_target_position(target_x_, target_y_, target_z_);
       target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
     } else {
-      // 话题模式: 等待话题数据
-      RCLCPP_INFO(this->get_logger(), 
-                  "等待目标位置话题: %s", target_position_topic_.c_str());
+      // Topic mode: target position was already obtained before sending TRAJ command, just confirm here
+      if (!target_generator_->is_target_ready()) {
+        RCLCPP_ERROR(this->get_logger(), 
+                     "ERROR: Entered TRAJ state but target topic data is not ready! This should not happen.");
+      } else {
+        // Get latest target position again (may have been updated since last retrieval)
+        target_generator_->get_target_position(target_x_, target_y_, target_z_);
+        target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
+        RCLCPP_INFO(this->get_logger(), 
+                    "Target topic data confirmed ready");
+      }
     }
     
     // Set initial hover action (will be used during stabilization period)
@@ -358,16 +396,16 @@ void TrackTestNode::action_update_callback()
     
     // Update target position from target generator
     if (use_target_topic_) {
-      // 话题模式: 从target_generator获取最新目标位置
+      // Topic mode: get latest target position from target_generator
       if (target_generator_->is_target_ready()) {
         target_generator_->get_target_position(target_x_, target_y_, target_z_);
         target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
       } else {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                             "等待目标位置话题数据...");
+                             "Waiting for target position topic data...");
       }
     }
-    // 静态模式: 目标位置已在初始化时设置，保持不变
+    // Static mode: target position was set during initialization and remains unchanged
     
     // Check if TRAJ control duration is complete
     if (elapsed >= hover_duration_) {
@@ -642,6 +680,13 @@ void TrackTestNode::update_neural_action()
 {
   // Increment step counter
   step_counter_++;
+  
+  // Update target position from target generator (for topic mode)
+  // This ensures we always use the latest target position for observation calculation
+  if (use_target_topic_ && target_generator_->is_target_ready()) {
+    target_generator_->get_target_position(target_x_, target_y_, target_z_);
+    target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
+  }
   
   // Get current observation (9D) - RAW (before normalization)
   std::vector<float> obs_raw = get_observation();

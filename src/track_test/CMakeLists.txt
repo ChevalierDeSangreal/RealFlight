@@ -81,6 +81,17 @@ ament_target_dependencies(track_test_node
   offboard_state_machine
 )
 
+# Target publisher node (for publishing target object circular trajectory)
+add_executable(target_publisher_node
+  src/target_publisher_node.cpp
+  src/target_publisher_main.cpp
+)
+
+ament_target_dependencies(target_publisher_node
+  rclcpp
+  geometry_msgs
+)
+
 # Link TensorFlow Lite and its dependencies based on build environment
 if(BUILD_ENV STREQUAL "SITL")
     # SITL environment: Using organized library structure
@@ -164,6 +175,7 @@ install(DIRECTORY include/
 # Install targets
 install(TARGETS
   track_test_node
+  target_publisher_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

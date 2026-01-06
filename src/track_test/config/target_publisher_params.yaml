@@ -1,0 +1,23 @@
+# 目标物体圆周运动轨迹配置
+# 空间单位为米，时间单位为秒，角度单位为弧度
+
+/**:
+  ros__parameters:
+    # 圆周运动参数
+    circle_radius: 2.0          # 圆形轨迹半径 [m]
+    circle_center_x: 0.0        # 圆心 X 坐标 (NED坐标系) [m]
+    circle_center_y: 0.0        # 圆心 Y 坐标 (NED坐标系) [m]
+    circle_center_z: -1.2       # 圆心 Z 坐标 (NED坐标系，负值表示高度) [m]
+    circle_init_phase: 3.14159  # 初始相位角 [rad] (π，使目标在无人机正前方1m处)
+    circle_times: 2             # 圆周运动圈数
+    # circle_duration: 20.0       # 单圈持续时间 [s] - 已注释（对应线速度约0.628 m/s）
+    circle_duration: 8.378      # 单圈持续时间 [s] (对应线速度1.5 m/s: 2π×2.0/1.5≈8.378)
+    
+    # 运动平滑参数
+    ramp_up_time: 3.0           # 加速时间 [s]
+    ramp_down_time: 3.0         # 减速时间 [s]
+    
+    # 控制参数
+    timer_period: 0.02          # 发布周期 (50Hz) [s]
+    max_speed: -1.0             # 最大线速度限制 [m/s] (负值表示不限制)
+
