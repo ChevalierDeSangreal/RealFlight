@@ -9,8 +9,8 @@
     circle_center_z: -1.2
     # circle_init_phase: 3.1415926
     circle_init_phase: 0.0
-    circle_times: 1
-    circle_duration: 17.25
+    circle_times: 2
+    circle_duration: 12.57
     ramp_up_time: 8.0
     ramp_down_time: 8.0
     timer_period: 0.01

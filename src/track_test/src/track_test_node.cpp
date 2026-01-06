@@ -711,16 +711,19 @@ void TrackTestNode::update_neural_action()
   double elapsed = (this->now() - hover_start_time_).seconds();
   
   // // ==================== 完整打印：步序号、原始观测、网络输出、归一化输出 ====================
+  // Use throttled logging to reduce print frequency (every 2 seconds)
   
-  // // 1. 步序号
-  RCLCPP_INFO(this->get_logger(), "");  // 空行分隔
-  RCLCPP_INFO(this->get_logger(), "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
+  // 1. 步序号
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "");  // 空行分隔
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, 
+                       "========== STEP %d (t=%.3fs) ==========", step_counter_, elapsed);
   
   // 2. 原始观测（未归一化）
-  RCLCPP_INFO(this->get_logger(), "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
-              obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
-              obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
-              obs_raw[6], obs_raw[7], obs_raw[8]);   // target_pos_body
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                       "[RAW OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
+                       obs_raw[0], obs_raw[1], obs_raw[2],    // v_body
+                       obs_raw[3], obs_raw[4], obs_raw[5],    // g_body
+                       obs_raw[6], obs_raw[7], obs_raw[8]);   // target_pos_body
   
   // // 3. 归一化后的观测（输入给神经网络的）
   // RCLCPP_INFO(this->get_logger(), "[NORM OBS] v_body=[%.6f, %.6f, %.6f], g_body=[%.6f, %.6f, %.6f], target_pos_body=[%.6f, %.6f, %.6f]",
@@ -734,8 +737,9 @@ void TrackTestNode::update_neural_action()
   float omega_y_norm = action[2];
   float omega_z_norm = action[3];
   
-  RCLCPP_INFO(this->get_logger(), "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
-              thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                       "[NN RAW OUTPUT] thrust_raw=%.6f, omega_x=%.6f, omega_y=%.6f, omega_z=%.6f",
+                       thrust_raw, omega_x_norm, omega_y_norm, omega_z_norm);
   
   // // 5. 归一化后输出（denormalized到物理量）
   // constexpr float OMEGA_MAX_X = 0.5f;  // rad/s
@@ -749,7 +753,7 @@ void TrackTestNode::update_neural_action()
   // RCLCPP_INFO(this->get_logger(), "[DENORM OUTPUT] thrust=[0-1]:%.6f, roll_rate=%.6f rad/s, pitch_rate=%.6f rad/s, yaw_rate=%.6f rad/s",
   //             thrust_normalized, roll_rate, pitch_rate, yaw_rate);
   
-  RCLCPP_INFO(this->get_logger(), "=====================================");
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "=====================================");
 }
 
 // Publish current action (called at 100Hz)

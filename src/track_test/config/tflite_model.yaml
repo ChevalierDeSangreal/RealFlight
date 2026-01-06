@@ -8,7 +8,7 @@
     
     # Model path (onboard mode - absolute path)
     # You may need to adjust this path based on your installation
-    model_path: "/home/radxa/RealFlight/src/track_test/config/trackVer12_policy.tflite"
+    model_path: "/home/radxa/RealFlight/src/track_test/config/trackVer12_policy_stablerer.tflite"
     
     # Model path (SITL mode - absolute path)
     model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/track_test/config/trackVer12_policy_stablerer.tflite"
