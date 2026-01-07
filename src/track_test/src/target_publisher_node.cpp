@@ -5,8 +5,12 @@
 TargetPublisherNode::TargetPublisherNode()
   : Node("target_publisher_node")
   , trajectory_started_(false)
+  , drone_id_(0)
+  , current_state_(FsmState::INIT)
+  , in_traj_state_(false)
 {
   // 声明并获取参数
+  drone_id_        = this->declare_parameter("drone_id", 0);
   circle_radius_    = this->declare_parameter("circle_radius", 2.0);
   circle_duration_  = this->declare_parameter("circle_duration", 20.0);
   circle_init_phase_= this->declare_parameter("circle_init_phase", 0.0);
@@ -71,6 +75,9 @@ TargetPublisherNode::TargetPublisherNode()
   RCLCPP_INFO(this->get_logger(), "Publish frequency: %.0f Hz", 1.0/timer_period_);
   RCLCPP_INFO(this->get_logger(), "Clock mode: %s", 
               use_sim_time_ ? "SIM_TIME (ROS clock)" : "SYSTEM_TIME (steady_clock)");
+  RCLCPP_INFO(this->get_logger(), "Drone ID: %d", drone_id_);
+  RCLCPP_INFO(this->get_logger(), "State topic: /state/state_drone_%d", drone_id_);
+  RCLCPP_INFO(this->get_logger(), "Target publishing will start when entering TRAJ state");
   
   // 创建发布者
   position_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
@@ -80,6 +87,15 @@ TargetPublisherNode::TargetPublisherNode()
   velocity_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
     "/target/velocity", 
     rclcpp::QoS(10));
+  
+  // 创建状态订阅者（监听状态机状态）
+  std::string state_topic = "/state/state_drone_" + std::to_string(drone_id_);
+  state_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+    state_topic,
+    rclcpp::QoS(10),
+    std::bind(&TargetPublisherNode::state_callback, this, std::placeholders::_1));
+  
+  RCLCPP_INFO(this->get_logger(), "Subscribed to state topic: %s", state_topic.c_str());
   
   // 创建定时器
   timer_ = rclcpp::create_timer(
@@ -91,11 +107,11 @@ TargetPublisherNode::TargetPublisherNode()
       std::bind(&TargetPublisherNode::timer_callback, this));
   
   // 注意：不在构造函数中初始化 start_time_
-  // 而是在第一次 timer_callback 中初始化，确保时钟已经同步
+  // 而是在进入 TRAJ 状态后，在 timer_callback 中初始化，确保时钟已经同步
   // 这样可以避免在 use_sim_time=true 时，时钟话题还未订阅到导致的时间错误
-  trajectory_started_ = false;  // 初始化为 false，等待第一次回调初始化
+  trajectory_started_ = false;  // 初始化为 false，等待进入 TRAJ 状态后初始化
   
-  RCLCPP_INFO(this->get_logger(), "Target trajectory generation will start on first timer callback");
+  RCLCPP_INFO(this->get_logger(), "Target trajectory generation will start when entering TRAJ state");
 }
 
 double TargetPublisherNode::calculate_effective_duration()
@@ -112,6 +128,28 @@ double TargetPublisherNode::calculate_effective_duration()
   }
   
   return circle_duration_;
+}
+
+void TargetPublisherNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
+{
+  auto state = static_cast<FsmState>(msg->data);
+  current_state_ = state;
+  
+  // 检测进入 TRAJ 状态
+  if (state == FsmState::TRAJ && !in_traj_state_) {
+    in_traj_state_ = true;
+    RCLCPP_INFO(this->get_logger(), 
+                "✅ Entered TRAJ state - Target trajectory publishing will start");
+    // 不在这里初始化时间，而是在 timer_callback 中初始化以确保时钟同步
+  }
+  
+  // 检测退出 TRAJ 状态
+  if (in_traj_state_ && state != FsmState::TRAJ) {
+    in_traj_state_ = false;
+    trajectory_started_ = false;  // 重置，以便下次进入 TRAJ 状态时重新初始化
+    RCLCPP_INFO(this->get_logger(), 
+                "Left TRAJ state - Target trajectory publishing stopped");
+  }
 }
 
 double TargetPublisherNode::calculate_theta_at_time(double t)
@@ -189,7 +227,13 @@ double TargetPublisherNode::calculate_angular_velocity_at_time(double t)
 
 void TargetPublisherNode::timer_callback()
 {
-  // 在第一次回调时初始化开始时间（确保时钟已同步）
+  // 只有在 TRAJ 状态时才发布目标轨迹
+  if (!in_traj_state_) {
+    // 未进入 TRAJ 状态，不发布任何数据
+    return;
+  }
+  
+  // 在进入 TRAJ 状态后的第一次回调时初始化开始时间（确保时钟已同步）
   if (!trajectory_started_) {
     if (use_sim_time_) {
       // SITL模式：使用ROS时钟（模拟时间）

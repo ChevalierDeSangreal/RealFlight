@@ -21,7 +21,7 @@
     
     # Fallback hover parameters (used if neural control fails)
     hover_thrust: 0.31  # Normalized thrust for hovering [0.0-1.0]
-    # hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
+    # hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
 
     # Target point position (in NED frame, meters)
     # The neural network will control the drone to hover at this target point

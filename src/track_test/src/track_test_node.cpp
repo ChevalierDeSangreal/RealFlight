@@ -69,7 +69,7 @@ TrackTestNode::TrackTestNode(int drone_id)
 {
   // Parameters
   hover_duration_   = this->declare_parameter("hover_duration", 3.0);  // TRAJ control duration: 3.0s
-  hover_thrust_     = this->declare_parameter("hover_thrust", 0.254);  // Match hover_test (lower thrust for neural control)
+  hover_thrust_     = this->declare_parameter("hover_thrust", 0.31);  // Match hover_test (lower thrust for neural control)
   mode_stabilization_delay_ = this->declare_parameter("mode_stabilization_delay", 0.6);  // Wait 0.6s for mode switch
   action_update_period_ = this->declare_parameter("action_update_period", 0.02);  // 50 Hz for NN inference
   control_send_period_  = this->declare_parameter("control_send_period", 0.01);  // 100 Hz for control commands

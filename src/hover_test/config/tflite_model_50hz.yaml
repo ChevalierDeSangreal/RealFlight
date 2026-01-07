@@ -14,8 +14,8 @@
     # model_path: "/home/radxa/RealFlight/src/hover_test/config/hoverVer0_policy.tflite"
     
     # Model path (SITL mode - absolute path)
-    # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer2_policy.tflite"
-    model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/track_test/config/trackVer12_policy.tflite"
+    model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer2_policy.tflite"
+    # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/track_test/config/trackVer12_policy.tflite"
     # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer1_policy_stable.tflite"
     # model_path_sitl: "/home/carlson/wangzimo/RealFlight/src/hover_test/config/hoverVer0_policy.tflite"
     
@@ -26,7 +26,7 @@
     
     # Fallback hover parameters (used if neural control fails)
     hover_thrust: 0.31  # Normalized thrust for hovering [0.0-1.0]
-    # hover_thrust: 0.581  # Normalized thrust for hovering [0.0-1.0]
+    # hover_thrust: 0.254  # Normalized thrust for hovering [0.0-1.0]
     
     # Mode stabilization delay
     mode_stabilization_delay: 0.6  # Wait 0.6s for mode switch stabilization [seconds]

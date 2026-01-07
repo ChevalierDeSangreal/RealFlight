@@ -4,6 +4,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 #include <chrono>
 #include <string>
@@ -21,6 +22,7 @@ public:
 
 private:
   void timer_callback();
+  void state_callback(const std_msgs::msg::Int32::SharedPtr msg);
   
   /**
    * @brief 生成圆周运动轨迹
@@ -78,15 +80,34 @@ private:
   double max_angular_vel_;            // 最大角速度 [rad/s]
   double angular_acceleration_;       // 角加速度 [rad/s²]
   
+  // 状态机状态枚举（与track_test_node保持一致）
+  enum class FsmState {
+    INIT = 0,
+    ARMING = 1,
+    TAKEOFF = 2,
+    GOTO = 3,
+    HOVER = 4,
+    TRAJ = 5,
+    END_TRAJ = 6,
+    LAND = 7,
+    DONE = 8
+  };
+  
   // 运行状态
   bool trajectory_started_;
   rclcpp::Time start_time_;  // ROS时钟开始时间（用于sim_time模式）
   std::chrono::steady_clock::time_point start_time_system_;  // 系统时钟开始时间（用于onboard模式）
   bool use_sim_time_;  // 是否使用模拟时间
   
+  // 状态机交互
+  int drone_id_;                    // 无人机ID，用于确定状态话题
+  FsmState current_state_;          // 当前状态机状态
+  bool in_traj_state_;              // 是否已进入TRAJ状态
+  
   // ROS2 接口
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr position_pub_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_pub_;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr state_sub_;  // 状态订阅
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

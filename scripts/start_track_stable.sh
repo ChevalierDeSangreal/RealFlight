@@ -27,7 +27,7 @@ if [[ "$MODE" != "onboard" && "$MODE" != "sitl" ]]; then
 fi
 
 # Environment Setup Commands
-ROS2_SETUP="export ROS_DOMAIN_ID=86 && source /opt/ros/humble/setup.bash && source $WORKSPACE_DIR/install/setup.bash"
+ROS2_SETUP="export ROS_DOMAIN_ID=0 && source /opt/ros/humble/setup.bash && source $WORKSPACE_DIR/install/setup.bash"
 FSM_CONFIG="$WORKSPACE_DIR/src/offboard_state_machine/config/fsm_track_stable.yaml"
 
 # Kill existing session if it exists
