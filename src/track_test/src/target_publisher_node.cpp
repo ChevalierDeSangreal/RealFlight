@@ -227,9 +227,27 @@ double TargetPublisherNode::calculate_angular_velocity_at_time(double t)
 
 void TargetPublisherNode::timer_callback()
 {
-  // 只有在 TRAJ 状态时才发布目标轨迹
+  // 未进入 TRAJ 状态时，发布初始静止位置（避免死锁）
   if (!in_traj_state_) {
-    // 未进入 TRAJ 状态，不发布任何数据
+    // 发布初始静止位置，让 track_test_node 能够检测到目标并进入 TRAJ 状态
+    double theta_initial = circle_init_phase_;
+    double x = circle_center_x_ + circle_radius_ * std::cos(theta_initial);
+    double y = circle_center_y_ + circle_radius_ * std::sin(theta_initial);
+    double z = circle_center_z_;
+    
+    // 零速度
+    double vx = 0.0;
+    double vy = 0.0;
+    double vz = 0.0;
+    
+    // 发布位置和速度
+    publish_target_position(x, y, z);
+    publish_target_velocity(vx, vy, vz);
+    
+    // 定期打印日志
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                         "[WAITING] Publishing initial stationary target at [%.2f, %.2f, %.2f] (waiting for TRAJ state)",
+                         x, y, z);
     return;
   }
   
@@ -247,7 +265,7 @@ void TargetPublisherNode::timer_callback()
       RCLCPP_INFO(this->get_logger(), "Using system clock (steady_clock) for trajectory timing");
     }
     trajectory_started_ = true;
-    RCLCPP_INFO(this->get_logger(), "Target trajectory generation started");
+    RCLCPP_INFO(this->get_logger(), "✅ Target trajectory generation started - starting timer (stationary for %.1fs, then circular motion)", stationary_time_);
     return;  // 第一次回调只初始化，不生成轨迹
   }
   

@@ -92,6 +92,7 @@ echo "Splitting window and launching Data Recorder..."
 tmux split-window -v -t "$SESSION_NAME" \
     "$ROS2_SETUP && cd $FLY_LOG_DIR && ros2 bag record \
     /fmu/out/vehicle_odometry \
+    /fmu/out/vehicle_control_mode \
     /target/position \
     /target/velocity \
     -o $BAG_NAME; exec bash"

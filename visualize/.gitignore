@@ -1,0 +1,19 @@
+# 忽略输出目录
+output/
+
+# Python编译文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 调试日志
+debug.log
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
