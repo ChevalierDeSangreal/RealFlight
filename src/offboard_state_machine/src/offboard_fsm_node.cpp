@@ -449,6 +449,7 @@ void OffboardFSM::publish_current_setpoint()
     sp.acceleration[i] = std::nanf("");
   }
   sp.yaw = 3.1415926f;
+  // sp.yaw = 0.0f;
   sp.yawspeed = 0.0f;
 
   if (active_seg_.has_value()) {
