@@ -270,8 +270,21 @@ ros2 topic echo /fmu/in/vehicle_rates_setpoint
 ros2 topic echo /fmu/in/offboard_control_mode
 ```
 
+## 日志管理：
 
+### 从无人机拷贝日志文件到本地
 
+将无人机上的 `~/RealFlight/fly_log` 目录内容拷贝到当前电脑的 `~/wangzimo/RealFlight/fly_log` 目录：
+
+```bash
+# 使用 rsync（推荐，支持增量同步）
+rsync -avz user@drone_ip:~/RealFlight/fly_log/ ~/wangzimo/RealFlight/fly_log/
+
+# 或使用 scp
+scp -r user@drone_ip:~/RealFlight/fly_log/* ~/wangzimo/RealFlight/fly_log/
+```
+
+**注意**：请将 `user` 替换为无人机上的用户名，将 `drone_ip` 替换为无人机的 IP 地址或主机名。
 
 ## 环境配置：
 
