@@ -7,14 +7,24 @@
     drone_id: 0                  # 无人机ID，用于订阅状态话题
     
     # 圆周运动参数
-    circle_radius: 1.5          # 圆形轨迹半径 [m] 必须是浮点数！！！
-    circle_center_x: 0.0        # 圆心 X 坐标 (NED坐标系) [m]
+    # circle_radius: 1.5          # 圆形轨迹半径 [m] 必须是浮点数！！！
+    # circle_center_x: -0.5        # 圆心 X 坐标 (NED坐标系) [m]
+
+    # circle_radius: 1.5          # For test 1
+    # circle_center_x: -0.5       # For test 1
+
+    circle_radius: 2.0          # For test 2 & 3
+    circle_center_x: -1.0       # For test 2 & 3
+
     circle_center_y: 0.0        # 圆心 Y 坐标 (NED坐标系) [m]
     circle_center_z: -1.2       # 圆心 Z 坐标 (NED坐标系，负值表示高度) [m]
     circle_init_phase: 3.1415926   # 初始相位角 [rad] (π/2，使目标初始化在(0, 2))
     circle_times: 1             # 圆周运动圈数
-    circle_duration: 20.0       # 单圈持续时间 [s] - r=2时对应线速度约0.628 m/s r=1.5时对应0.471 m/s
+    # circle_duration: 20.0       # 单圈持续时间 [s] - r=2时对应线速度约0.628 m/s r=1.5时对应0.471 m/s
     # circle_duration: 12.6      # 单圈持续时间 [s] - r=2时对应线速度1m/s
+    # circle_duration: 18.85       # For test 1  v=0.5m/s, a=0.167m/s^2
+    circle_duration: 25.13      # For test 2  v=0.5m/s, a=0.125m/s^2
+    # circle_duration: 12.57      # For test 3  v=1m/s, a=0.5m/s^2
     
     # 运动平滑参数
     ramp_up_time: 3.0           # 加速时间 [s]
