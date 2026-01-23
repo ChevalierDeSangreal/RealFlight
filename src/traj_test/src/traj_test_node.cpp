@@ -9,6 +9,7 @@ TrajTestNode::TrajTestNode(int drone_id)
   , traj_command_sent_(false)
   , traj_started_(false)
   , traj_completed_(false)
+  , track_ready_(false)
   , current_x_(0.0)           
   , current_y_(0.0)           
   , current_z_(0.0)           
@@ -66,6 +67,15 @@ TrajTestNode::TrajTestNode(int drone_id)
     "/state/command_drone_" + std::to_string(drone_id_), 
     rclcpp::QoS(10));
   
+  // Target position and velocity publishers (for track node)
+  target_pos_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
+    "/target/position",
+    rclcpp::QoS(10));
+  
+  target_vel_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
+    "/target/velocity",
+    rclcpp::QoS(10));
+  
   // Subscribers
   state_sub_ = this->create_subscription<std_msgs::msg::Int32>(
     "/state/state_drone_" + std::to_string(drone_id_),
@@ -76,6 +86,12 @@ TrajTestNode::TrajTestNode(int drone_id)
     px4_namespace_ + "out/vehicle_odometry",
     rclcpp::SensorDataQoS(),
     std::bind(&TrajTestNode::odom_callback, this, std::placeholders::_1));
+  
+  // Subscribe to track node ready signal
+  track_ready_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+    "/track/ready",
+    rclcpp::QoS(10),
+    std::bind(&TrajTestNode::track_ready_callback, this, std::placeholders::_1));
   
   // Timer using node clock (respects use_sim_time)
   timer_ = rclcpp::create_timer(
@@ -200,12 +216,20 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
                 "HOVER detected, starting trajectory in 2.0s");
   }
 
-  // Send TRAJ command after delay
+  // Send TRAJ command after delay AND when track node is ready
   if (waiting_traj_ && !traj_command_sent_ && !traj_started_ && !traj_completed_ &&
       (this->now() - hover_detect_time_).seconds() > 2.0) {
-    RCLCPP_INFO(this->get_logger(), "Commanding FSM to TRAJ state");
-    send_state_command(static_cast<int>(FsmState::TRAJ));
-    traj_command_sent_ = true;
+    
+    // Check if track node is ready
+    if (track_ready_) {
+      RCLCPP_INFO(this->get_logger(), "Track node ready - Commanding FSM to TRAJ state");
+      send_state_command(static_cast<int>(FsmState::TRAJ));
+      traj_command_sent_ = true;
+    } else {
+      // Warn that we're waiting for track node
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                           "Waiting for track node to be ready before entering TRAJ...");
+    }
   }
 
   // TRAJ state entered
@@ -214,7 +238,8 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     waiting_traj_ = false;
     traj_command_sent_ = false;
     traj_start_time_ = this->now();
-    RCLCPP_INFO(this->get_logger(), "Trajectory generation started");
+    RCLCPP_INFO(this->get_logger(), 
+                "🚁 Trajectory generation started - Now publishing target position for tracking");
   }
 
   // Premature exit from TRAJ
@@ -233,6 +258,14 @@ void TrajTestNode::odom_callback(
   current_y_ = msg->position[1];
   current_z_ = msg->position[2];
   odom_ready_ = true;
+}
+
+void TrajTestNode::track_ready_callback(const std_msgs::msg::Bool::SharedPtr msg)
+{
+  track_ready_ = msg->data;
+  if (track_ready_) {
+    RCLCPP_INFO(this->get_logger(), "✅ Track node is ready to receive target");
+  }
 }
 
 void TrajTestNode::timer_callback()
@@ -290,8 +323,12 @@ void TrajTestNode::generate_circular_trajectory(double t)
   // Yaw pointing forward
   yaw = 3.1415926f;
   
-  // Publish setpoint
+  // Publish setpoint for drone control
   publish_trajectory_setpoint(x, y, z, vx, vy, vz, yaw);
+  
+  // Publish target position and velocity for track node
+  publish_target_position(x, y, z);
+  publish_target_velocity(vx, vy, vz);
   
   // Debug logging with phase info
   double t_up = ramp_up_time_;
@@ -335,6 +372,33 @@ void TrajTestNode::publish_trajectory_setpoint(
   msg.timestamp = 0;  // Let PX4 assign timestamp
   
   traj_pub_->publish(msg);
+}
+
+void TrajTestNode::publish_target_position(double x, double y, double z)
+{
+  geometry_msgs::msg::PointStamped msg;
+  msg.header.stamp = this->now();
+  msg.header.frame_id = "map";
+  msg.point.x = x;
+  msg.point.y = y;
+  msg.point.z = z;
+  
+  target_pos_pub_->publish(msg);
+}
+
+void TrajTestNode::publish_target_velocity(double vx, double vy, double vz)
+{
+  geometry_msgs::msg::TwistStamped msg;
+  msg.header.stamp = this->now();
+  msg.header.frame_id = "map";
+  msg.twist.linear.x = vx;
+  msg.twist.linear.y = vy;
+  msg.twist.linear.z = vz;
+  msg.twist.angular.x = 0.0;
+  msg.twist.angular.y = 0.0;
+  msg.twist.angular.z = 0.0;
+  
+  target_vel_pub_->publish(msg);
 }
 
 void TrajTestNode::send_state_command(int state)

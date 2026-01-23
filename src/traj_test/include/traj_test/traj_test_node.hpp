@@ -3,8 +3,11 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include "offboard_state_machine/utils.hpp"
 
 #include <chrono>
@@ -20,11 +23,14 @@ private:
   void timer_callback();
   void state_callback(const std_msgs::msg::Int32::SharedPtr msg);
   void odom_callback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
+  void track_ready_callback(const std_msgs::msg::Bool::SharedPtr msg);
   
   void generate_circular_trajectory(double t);
   void publish_trajectory_setpoint(double x, double y, double z, 
                                    double vx, double vy, double vz,
                                    double yaw);
+  void publish_target_position(double x, double y, double z);
+  void publish_target_velocity(double vx, double vy, double vz);
   void send_state_command(int state);
   
   std::string get_px4_namespace(int drone_id);
@@ -75,6 +81,7 @@ private:
   bool traj_command_sent_;
   bool traj_started_;
   bool traj_completed_;
+  bool track_ready_;                  // Whether track node is ready to receive target
   rclcpp::Time hover_detect_time_;
   rclcpp::Time traj_start_time_;
   double accumulated_elapsed_;        // Accumulated time since traj start [s]
@@ -89,8 +96,11 @@ private:
   std::string px4_namespace_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr traj_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr state_cmd_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr target_pos_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr target_vel_pub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr state_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr track_ready_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

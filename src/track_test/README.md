@@ -2,6 +2,8 @@
 
 无人机目标追踪测试包，包含基于神经网络策略的追踪控制节点和目标物体轨迹发布节点。
 
+**新增功能**: 支持跟踪另一架由 traj_test 控制的实际无人机，实现真实的无人机间目标跟踪。
+
 ## 编译
 
 ```bash
@@ -77,6 +79,77 @@ ros2 launch track_test target_publisher.launch.py \
 
 **完整使用流程**:
 
+### 3. 跟踪真实无人机（与 traj_test 配合）
+
+这是最新的功能，允许一架无人机跟踪另一架由 `traj_test` 控制的无人机。
+
+**多机跟踪流程**（推荐）:
+
+1. **启动跟踪无人机的状态机**（例如 drone_0）:
+   ```bash
+   # 实机模式
+   ros2 launch offboard_state_machine single_drone_test.launch.py \
+       drone_id:=0 mode:=onboard \
+       config_file:=~/wangzimo/RealFlight/src/offboard_state_machine/config/fsm_track.yaml
+   
+   # SITL 模式
+   ros2 launch offboard_state_machine single_drone_test.launch.py \
+       drone_id:=0 mode:=sitl \
+       config_file:=~/wangzimo/RealFlight/src/offboard_state_machine/config/fsm_track.yaml
+   ```
+
+2. **启动目标无人机的状态机**（例如 drone_1）:
+   ```bash
+   # 实机模式
+   ros2 launch offboard_state_machine single_drone_test.launch.py \
+       drone_id:=1 mode:=onboard \
+       config_file:=~/wangzimo/RealFlight/src/offboard_state_machine/config/fsm_hover.yaml
+   
+   # SITL 模式
+   ros2 launch offboard_state_machine single_drone_test.launch.py \
+       drone_id:=1 mode:=sitl \
+       config_file:=~/wangzimo/RealFlight/src/offboard_state_machine/config/fsm_hover.yaml
+   ```
+
+3. **启动跟踪控制节点**（话题模式，订阅目标无人机）:
+   ```bash
+   # 实机模式
+   ros2 launch track_test track_test.launch.py \
+       drone_id:=0 \
+       mode:=onboard \
+       use_target_topic:=true
+   
+   # SITL 模式
+   ros2 launch track_test track_test.launch.py \
+       drone_id:=0 \
+       mode:=sitl \
+       use_target_topic:=true
+   ```
+
+4. **启动目标轨迹节点**（发布目标位置）:
+   ```bash
+   # 实机模式
+   ros2 launch traj_test traj_test.launch.py \
+       drone_id:=1 \
+       mode:=onboard
+   
+   # SITL 模式
+   ros2 launch traj_test traj_test.launch.py \
+       drone_id:=1 \
+       mode:=sitl
+   ```
+
+**通信机制与握手协议**（避免死锁）:
+1. `track_test` 在 HOVER 状态时发布 `/track/ready` 信号（ready=true）
+2. `traj_test` 等待 ready 信号后才进入 TRAJ 状态
+3. `traj_test` 进入 TRAJ 后开始发布 `/target/position` 和 `/target/velocity`
+4. `track_test` 收到目标数据后进入 TRAJ 状态开始跟踪
+5. 这个握手机制确保两个节点按正确顺序启动，避免死锁
+
+---
+
+### 4. 跟踪虚拟目标（原有功能）
+
 #### 步骤 1: 启动状态机
 
 ```bash
@@ -91,7 +164,7 @@ ros2 launch offboard_state_machine single_drone_test.launch.py \
     config_file:=~/wangzimo/RealFlight/src/offboard_state_machine/config/fsm_track.yaml
 ```
 
-#### 步骤 2: 启动追踪控制节点
+#### 步骤 2: 启动追踪控制节点（虚拟目标模式）
 
 ```bash
 # 实机模式 - 话题模式（订阅目标发布节点）
@@ -113,7 +186,7 @@ ros2 launch track_test track_test.launch.py \
     use_target_topic:=false
 ```
 
-#### 步骤 3: 启动目标发布节点
+#### 步骤 3: 启动虚拟目标发布节点
 
 ```bash
 # 实机模式（使用系统时钟）
@@ -176,6 +249,8 @@ ros2 topic list | grep target
 - 确认状态机已进入 TRACK 状态
 - 确认 `use_target_topic:=true` 参数已设置
 - 检查 TensorFlow Lite 模型文件路径是否正确
+- 检查是否收到目标位置数据：`ros2 topic echo /target/position`
+- 检查 `/track/ready` 信号是否正常发布
 
 **3. 轨迹不平滑**
 - 增加 `ramp_up_time` 和 `ramp_down_time`
@@ -188,6 +263,12 @@ ros2 topic list | grep target
 - 查看节点日志，确认时钟模式是否正确：
   - 应显示 `Clock mode: SIM_TIME (ROS clock)` 或 `Clock mode: SYSTEM_TIME (steady_clock)`
 - 如果使用模拟时间，确保 `/clock` 话题正在发布（SITL环境）
+
+**5. 多机跟踪不工作**
+- 检查 `/track/ready` 话题：`ros2 topic echo /track/ready`
+- 检查 `/target/position` 和 `/target/velocity` 是否正常发布
+- 确认两架无人机使用不同的 drone_id（例如 0 和 1）
+- 查看两个节点的日志，确认握手协议是否正常执行
 
 ---
 

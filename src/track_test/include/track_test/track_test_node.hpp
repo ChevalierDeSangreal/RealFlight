@@ -3,6 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <px4_msgs/msg/vehicle_rates_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
@@ -42,6 +43,7 @@ private:
   void publish_current_action();     // Publish current action at high frequency
   void publish_hover_setpoint();     // Fallback hover control
   void send_state_command(int state);
+  void publish_track_ready(bool ready);  // Publish track ready signal for traj node
   
   std::vector<float> get_observation();
   
@@ -138,6 +140,7 @@ private:
   std::string px4_namespace_;
   rclcpp::Publisher<px4_msgs::msg::VehicleRatesSetpoint>::SharedPtr rates_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr state_cmd_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr track_ready_pub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr state_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub_;  // Contains position, velocity, and attitude!
   

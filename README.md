@@ -278,7 +278,7 @@ ros2 topic echo /fmu/in/offboard_control_mode
 
 ```bash
 # 使用 rsync（推荐，支持增量同步）
-rsync -avz user@drone_ip:~/RealFlight/fly_log/ ~/wangzimo/RealFlight/fly_log/
+rsync -avz radxa@192.168.1.115:~/RealFlight/fly_log/ ~/wangzimo/RealFlight/fly_log/
 
 # 或使用 scp
 scp -r user@drone_ip:~/RealFlight/fly_log/* ~/wangzimo/RealFlight/fly_log/

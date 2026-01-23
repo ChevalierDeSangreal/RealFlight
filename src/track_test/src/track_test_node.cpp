@@ -149,6 +149,11 @@ TrackTestNode::TrackTestNode(int drone_id)
     "/state/command_drone_" + std::to_string(drone_id_), 
     rclcpp::QoS(10));
   
+  // Track ready publisher (for traj node)
+  track_ready_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+    "/track/ready",
+    rclcpp::QoS(10).transient_local());  // Transient local for late joiners
+  
   // Subscribers
   state_sub_ = this->create_subscription<std_msgs::msg::Int32>(
     "/state/state_drone_" + std::to_string(drone_id_),
@@ -216,6 +221,10 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_detect_time_ = this->now();
     RCLCPP_INFO(this->get_logger(),
                 "HOVER detected, will start hover control in 2.0s");
+    
+    // Publish track ready signal for traj node
+    publish_track_ready(true);
+    RCLCPP_INFO(this->get_logger(), "📡 Published track ready signal (ready=true)");
   }
 
   // Check if ready to send TRAJ command (after 2.0s delay)
@@ -317,6 +326,10 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     waiting_hover_ = false;
     hover_command_sent_ = false;
     neural_control_ready_ = false;
+    
+    // Reset track ready signal
+    publish_track_ready(false);
+    
     RCLCPP_INFO(this->get_logger(),
                 "Left TRAJ state, resetting");
   }
@@ -854,4 +867,11 @@ void TrackTestNode::send_state_command(int state)
   state_cmd_pub_->publish(msg);
   
   RCLCPP_INFO(this->get_logger(), "Sent state command: %d", state);
+}
+
+void TrackTestNode::publish_track_ready(bool ready)
+{
+  std_msgs::msg::Bool msg;
+  msg.data = ready;
+  track_ready_pub_->publish(msg);
 }

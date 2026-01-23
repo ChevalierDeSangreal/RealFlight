@@ -2,6 +2,8 @@
 
 无人机圆形轨迹跟踪测试节点，与 PX4 offboard 状态机集成。
 
+**新增功能**: 支持作为被跟踪目标，为 track_test 节点发布实时位置和速度信息。
+
 ## 编译
 
 ### SITL 环境（仿真）
@@ -89,9 +91,39 @@ ros2 run traj_test traj_test_node 0 \
 
 3. **工作流程**
    - 节点自动检测 HOVER 状态
-   - 检测到 HOVER 后自动发送 TRAJ 命令
-   - 进入 TRAJ 状态后开始圆形轨迹飞行
+   - 等待 track_test 节点发布 ready 信号（如果有跟踪节点运行）
+   - 检测到 HOVER 且收到 ready 信号后自动发送 TRAJ 命令
+   - 进入 TRAJ 状态后开始圆形轨迹飞行，同时发布目标位置和速度供其他节点跟踪
    - 完成预设圈数后自动发送 END_TRAJ 命令
+
+### 作为被跟踪目标使用
+
+当与 `track_test` 节点配合使用时，`traj_test` 会作为被跟踪的目标无人机：
+
+1. **启动 track_test 节点**（跟踪无人机，例如 drone_0）:
+   ```bash
+   ros2 launch track_test track_test.launch.py \
+       drone_id:=0 \
+       mode:=onboard \
+       use_target_topic:=true
+   ```
+
+2. **启动 traj_test 节点**（目标无人机，例如 drone_1）:
+   ```bash
+   ros2 launch traj_test traj_test.launch.py \
+       drone_id:=1 \
+       mode:=onboard
+   ```
+
+3. **通信机制**（避免死锁）:
+   - track_test 在进入 HOVER 状态时发布 `/track/ready` 信号（ready=true）
+   - traj_test 等待收到 ready 信号后才进入 TRAJ 状态
+   - traj_test 进入 TRAJ 后开始发布 `/target/position` 和 `/target/velocity`
+   - track_test 收到目标位置后进入 TRAJ 状态开始跟踪
+
+4. **发布的话题**:
+   - `/target/position` (geometry_msgs/PointStamped) - 无人机实时位置（NED坐标系）
+   - `/target/velocity` (geometry_msgs/TwistStamped) - 无人机实时速度（NED坐标系）
 
 ## 配置参数
 
@@ -128,8 +160,19 @@ ros2 topic echo /fmu/out/vehicle_odometry
 
 # 状态机状态
 ros2 topic echo /state/state_drone_0
+
+# 目标位置（供跟踪节点使用）
+ros2 topic echo /target/position
+
+# 目标速度（供跟踪节点使用）
+ros2 topic echo /target/velocity
+
+# Track 节点就绪信号
+ros2 topic echo /track/ready
 ```
 
 **常见问题：**
 - 无人机不动：检查状态机是否正常运行，是否已进入 HOVER 状态
 - 轨迹不平滑：增加 `ramp_up_time` 和 `ramp_down_time`，或减小 `max_speed`
+- 一直等待 track ready：确认 track_test 节点是否正常运行，检查 `/track/ready` 话题是否发布
+- 跟踪失败：确认 `/target/position` 和 `/target/velocity` 话题是否正常发布，频率是否足够（50Hz）
