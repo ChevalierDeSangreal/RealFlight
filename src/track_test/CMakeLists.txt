@@ -92,6 +92,17 @@ ament_target_dependencies(target_publisher_node
   geometry_msgs
 )
 
+# Vicon to target converter node (for converting Vicon topics to target topics)
+add_executable(vicon_to_target_node
+  src/vicon_to_target_node.cpp
+  src/vicon_to_target_main.cpp
+)
+
+ament_target_dependencies(vicon_to_target_node
+  rclcpp
+  geometry_msgs
+)
+
 # Link TensorFlow Lite and its dependencies based on build environment
 if(BUILD_ENV STREQUAL "SITL")
     # SITL environment: Using organized library structure
@@ -176,6 +187,7 @@ install(DIRECTORY include/
 install(TARGETS
   track_test_node
   target_publisher_node
+  vicon_to_target_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
