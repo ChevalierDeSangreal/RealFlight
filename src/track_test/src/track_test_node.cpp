@@ -221,10 +221,8 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     hover_detect_time_ = this->now();
     RCLCPP_INFO(this->get_logger(),
                 "HOVER detected, will start hover control in 2.0s");
-    
-    // Publish track ready signal for traj node
-    publish_track_ready(true);
-    RCLCPP_INFO(this->get_logger(), "📡 Published track ready signal (ready=true)");
+    RCLCPP_INFO(this->get_logger(),
+                "Waiting for target position data to check position...");
   }
 
   // Check if ready to send TRAJ command (after 2.0s delay)
@@ -234,21 +232,34 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     // 对于话题模式，需要等待目标数据就绪
     if (use_target_topic_) {
       if (target_generator_->is_target_ready()) {
-        // Target data ready, send TRAJ command
+        // Target data ready, check position before sending TRAJ command
         RCLCPP_INFO(this->get_logger(), 
-                    "Target topic data ready, sending TRAJ state command");
+                    "Target topic data ready, checking target position...");
         
-        // Get target position information for logging
+        // Get target position information
         target_generator_->get_target_position(target_x_, target_y_, target_z_);
         target_generator_->get_target_velocity(target_vx_, target_vy_, target_vz_);
         
         RCLCPP_INFO(this->get_logger(), 
-                    "Target position: [%.2f, %.2f, %.2f], velocity: [%.2f, %.2f, %.2f]",
+                    "Target position (world): [%.2f, %.2f, %.2f], velocity: [%.2f, %.2f, %.2f]",
                     target_x_, target_y_, target_z_, target_vx_, target_vy_, target_vz_);
+        RCLCPP_INFO(this->get_logger(),
+                    "Drone position (world): [%.2f, %.2f, %.2f], yaw: %.2f rad",
+                    current_x_, current_y_, current_z_, current_yaw_);
         
-        send_state_command(static_cast<int>(FsmState::TRAJ));
-        hover_command_sent_ = true;
-        hover_start_time_ = this->now();
+        // Check if target is in expected position (1m in front, 0.5m tolerance)
+        if (check_target_position()) {
+          // Position check passed, send TRAJ command
+          RCLCPP_INFO(this->get_logger(), 
+                      "Target position check passed, sending TRAJ state command");
+          send_state_command(static_cast<int>(FsmState::TRAJ));
+          hover_command_sent_ = true;
+          hover_start_time_ = this->now();
+        } else {
+          // Position check failed, wait and retry
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                               "Target position check failed - waiting for target to be in correct position (1m in front, ±0.5m tolerance)");
+        }
       } else {
         // Target data not ready, print waiting message
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
@@ -273,6 +284,10 @@ void TrackTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     neural_control_ready_ = false;  // Reset - will be set to true after stabilization delay
     hover_start_time_ = this->now();
     step_counter_ = 0;  // Reset step counter
+    
+    // Publish track ready signal for traj node (track node has entered TRAJ state)
+    publish_track_ready(true);
+    RCLCPP_INFO(this->get_logger(), "📡 Published track ready signal (ready=true) - Track node entered TRAJ state");
     
     // Capture current position for hover
     hover_x_ = current_x_;
@@ -874,4 +889,75 @@ void TrackTestNode::publish_track_ready(bool ready)
   std_msgs::msg::Bool msg;
   msg.data = ready;
   track_ready_pub_->publish(msg);
+}
+
+// Check if target is in front (1m) with 0.5m tolerance
+bool TrackTestNode::check_target_position()
+{
+  // Calculate target position relative to drone in world frame
+  double target_rel_x = target_x_ - current_x_;
+  double target_rel_y = target_y_ - current_y_;
+  double target_rel_z = target_z_ - current_z_;
+  
+  // Transform to body frame (NED coordinate system)
+  // Rotation matrix from Euler angles (ZYX convention)
+  float cr = std::cos(current_roll_);
+  float sr = std::sin(current_roll_);
+  float cp = std::cos(current_pitch_);
+  float sp = std::sin(current_pitch_);
+  float cy = std::cos(current_yaw_);
+  float sy = std::sin(current_yaw_);
+  
+  // Rotation matrix R (body to world)
+  float R[3][3];
+  R[0][0] = cy * cp;
+  R[0][1] = cy * sp * sr - sy * cr;
+  R[0][2] = cy * sp * cr + sy * sr;
+  R[1][0] = sy * cp;
+  R[1][1] = sy * sp * sr + cy * cr;
+  R[1][2] = sy * sp * cr - cy * sr;
+  R[2][0] = -sp;
+  R[2][1] = cp * sr;
+  R[2][2] = cp * cr;
+  
+  // Transform relative position to body frame (R^T transforms world to body)
+  float target_rel_body_x = R[0][0] * target_rel_x + R[1][0] * target_rel_y + R[2][0] * target_rel_z;
+  float target_rel_body_y = R[0][1] * target_rel_x + R[1][1] * target_rel_y + R[2][1] * target_rel_z;
+  float target_rel_body_z = R[0][2] * target_rel_x + R[1][2] * target_rel_y + R[2][2] * target_rel_z;
+  
+  // Check if target is in front (x-axis) at approximately 1m with 0.5m tolerance
+  constexpr double EXPECTED_DISTANCE = 1.0;  // 1m in front
+  constexpr double DISTANCE_TOLERANCE = 0.5;  // 0.5m tolerance
+  constexpr double LATERAL_TOLERANCE = 0.5;   // 0.5m tolerance for y and z
+  
+  // Check x-axis (forward direction): should be around 1m (0.5m to 1.5m)
+  bool x_ok = (target_rel_body_x >= (EXPECTED_DISTANCE - DISTANCE_TOLERANCE)) &&
+              (target_rel_body_x <= (EXPECTED_DISTANCE + DISTANCE_TOLERANCE));
+  
+  // Check y-axis (lateral direction): should be within 0.5m
+  bool y_ok = std::abs(target_rel_body_y) <= LATERAL_TOLERANCE;
+  
+  // Check z-axis (vertical direction): should be within 0.5m
+  bool z_ok = std::abs(target_rel_body_z) <= LATERAL_TOLERANCE;
+  
+  // Log the check result
+  RCLCPP_INFO(this->get_logger(),
+              "Target position check: body_frame=[%.3f, %.3f, %.3f] m",
+              target_rel_body_x, target_rel_body_y, target_rel_body_z);
+  RCLCPP_INFO(this->get_logger(),
+              "  Expected: x=%.2f±%.2f m, |y|<=%.2f m, |z|<=%.2f m",
+              EXPECTED_DISTANCE, DISTANCE_TOLERANCE, LATERAL_TOLERANCE, LATERAL_TOLERANCE);
+  RCLCPP_INFO(this->get_logger(),
+              "  Check result: x=%s, y=%s, z=%s",
+              x_ok ? "OK" : "FAIL", y_ok ? "OK" : "FAIL", z_ok ? "OK" : "FAIL");
+  
+  if (!x_ok || !y_ok || !z_ok) {
+    RCLCPP_WARN(this->get_logger(),
+                "Target position check FAILED - target not in expected position. Waiting...");
+    return false;
+  }
+  
+  RCLCPP_INFO(this->get_logger(),
+              "✅ Target position check PASSED - target is in front at ~1m");
+  return true;
 }

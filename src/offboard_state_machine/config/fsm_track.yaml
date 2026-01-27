@@ -34,7 +34,7 @@
     # --------------------------------------------------------------------------
     # goto_x: -0.5          # GOTO 目标点 X (NED坐标系，米)
     # goto_x: -0.5          # for test 1
-    goto_x: -1.0          # for test 2
+    goto_x: -2.0          # for test 2
     
     goto_y: 0.0           # GOTO 目标点 Y (NED坐标系，米)
     goto_z: -1.2          # GOTO 目标点 Z (NED坐标系，负值表示高度)

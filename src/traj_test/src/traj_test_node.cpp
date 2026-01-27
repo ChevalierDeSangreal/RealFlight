@@ -213,22 +213,23 @@ void TrajTestNode::state_callback(const std_msgs::msg::Int32::SharedPtr msg)
     waiting_traj_ = true;
     hover_detect_time_ = this->now();
     RCLCPP_INFO(this->get_logger(),
-                "HOVER detected, starting trajectory in 2.0s");
+                "HOVER detected - Publishing static target position (trajectory start point)");
+    RCLCPP_INFO(this->get_logger(),
+                "Waiting for track node to enter TRAJ and send ready signal...");
   }
 
-  // Send TRAJ command after delay AND when track node is ready
-  if (waiting_traj_ && !traj_command_sent_ && !traj_started_ && !traj_completed_ &&
-      (this->now() - hover_detect_time_).seconds() > 2.0) {
+  // Send TRAJ command when track node is ready (track node enters TRAJ and sends ready signal)
+  if (waiting_traj_ && !traj_command_sent_ && !traj_started_ && !traj_completed_) {
     
-    // Check if track node is ready
+    // Check if track node is ready (track node has entered TRAJ state)
     if (track_ready_) {
-      RCLCPP_INFO(this->get_logger(), "Track node ready - Commanding FSM to TRAJ state");
+      RCLCPP_INFO(this->get_logger(), "✅ Track node ready (entered TRAJ) - Commanding FSM to TRAJ state");
       send_state_command(static_cast<int>(FsmState::TRAJ));
       traj_command_sent_ = true;
     } else {
-      // Warn that we're waiting for track node
+      // Warn that we're waiting for track node to enter TRAJ
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                           "Waiting for track node to be ready before entering TRAJ...");
+                           "Waiting for track node to enter TRAJ state and send ready signal...");
     }
   }
 
@@ -274,6 +275,23 @@ void TrajTestNode::timer_callback()
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                          "Waiting for odometry");
     return;
+  }
+  
+  // In HOVER state: publish static target position (trajectory start point)
+  if (current_state_ == FsmState::HOVER && waiting_traj_ && !traj_started_) {
+    // Calculate trajectory start position (t=0)
+    double theta_with_phase = circle_init_phase_;
+    double start_x = circle_center_x_ + circle_radius_ * std::cos(theta_with_phase);
+    double start_y = circle_center_y_ + circle_radius_ * std::sin(theta_with_phase);
+    double start_z = circle_center_z_;
+    
+    // Publish static target position (zero velocity)
+    publish_target_position(start_x, start_y, start_z);
+    publish_target_velocity(0.0, 0.0, 0.0);
+    
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                         "📡 Publishing static target position: [%.2f, %.2f, %.2f] (trajectory start)",
+                         start_x, start_y, start_z);
   }
   
   // Generate trajectory only in TRAJ state

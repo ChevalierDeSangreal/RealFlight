@@ -47,6 +47,9 @@ private:
   
   std::vector<float> get_observation();
   
+  // Target position validation
+  bool check_target_position();      // Check if target is in front (1m) with 0.5m tolerance
+  
   std::string get_px4_namespace(int drone_id);
   
   // Neural network dimensions (matching TrackEnvVer6)
