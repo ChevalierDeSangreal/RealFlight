@@ -7,14 +7,14 @@
 # to target position and velocity topics (/target/position and /target/velocity).
 # 
 # Usage:
-#   ./start_vicon_to_target.sh [vicon_topic_name] [mode] [vicon_topic_type]
-#   vicon_topic_name: Vicon topic name (default: /vicon/pose)
+#   ./start_vicon_to_target.sh [px4_topic_name] [mode]
+#   px4_topic_name: PX4 VehicleOdometry topic name (default: /px4_3/fmu/out/vehicle_odometry)
 #   mode: onboard (default) or sitl
-#   vicon_topic_type: PoseStamped (default) or TransformStamped
 # 
 # Examples:
-#   ./start_vicon_to_target.sh /vicon/drone1/pose onboard PoseStamped
-#   ./start_vicon_to_target.sh /vicon/object1/transform sitl TransformStamped
+#   ./start_vicon_to_target.sh  # Uses default: /px4_3/fmu/out/vehicle_odometry
+#   ./start_vicon_to_target.sh /px4_3/fmu/out/vehicle_odometry onboard
+#   ./start_vicon_to_target.sh /px4_0/fmu/out/vehicle_odometry sitl
 # ============================================================================
 
 set -e
@@ -25,12 +25,11 @@ SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)"
 
 # Argument Parsing
-VICON_TOPIC_NAME=${1:-/vicon/pose}
+PX4_TOPIC_NAME=${1:-/px4_3/fmu/out/vehicle_odometry}
 MODE=${2:-onboard}
-VICON_TOPIC_TYPE=${3:-PoseStamped}
 
 # Generate session name from topic name (replace / with _)
-SESSION_NAME="vicon_to_target_$(echo $VICON_TOPIC_NAME | tr '/' '_' | tr '-' '_')"
+SESSION_NAME="vicon_to_target_$(echo $PX4_TOPIC_NAME | tr '/' '_' | tr '-' '_')"
 
 # Validate Mode
 if [[ "$MODE" != "onboard" && "$MODE" != "sitl" ]]; then
@@ -38,11 +37,6 @@ if [[ "$MODE" != "onboard" && "$MODE" != "sitl" ]]; then
     exit 1
 fi
 
-# Validate Topic Type
-if [[ "$VICON_TOPIC_TYPE" != "PoseStamped" && "$VICON_TOPIC_TYPE" != "TransformStamped" ]]; then
-    echo "ERROR: Vicon topic type must be 'PoseStamped' or 'TransformStamped'"
-    exit 1
-fi
 
 # Environment Setup Commands
 ROS2_SETUP="export ROS_DOMAIN_ID=86 && source /opt/ros/humble/setup.bash && source $WORKSPACE_DIR/install/setup.bash"
@@ -54,34 +48,32 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
 fi
 
 echo "======================================"
-echo "Starting Vicon to Target Converter"
+echo "Starting PX4 to Target Converter"
 echo "======================================"
-echo "Vicon Topic: $VICON_TOPIC_NAME"
-echo "Topic Type: $VICON_TOPIC_TYPE"
+echo "PX4 Topic: $PX4_TOPIC_NAME"
 echo "Mode: $MODE"
 echo "Publishes: /target/position, /target/velocity"
 echo "======================================"
 
-# Create Session and start Vicon to Target Node
-echo "Launching Vicon to Target Node..."
-tmux new-session -d -s "$SESSION_NAME" -n "vicon_converter" \
+# Create Session and start PX4 to Target Node
+echo "Launching PX4 to Target Node..."
+tmux new-session -d -s "$SESSION_NAME" -n "px4_converter" \
     "$ROS2_SETUP && ros2 launch track_test vicon_to_target.launch.py \
-    vicon_topic_name:=$VICON_TOPIC_NAME \
-    vicon_topic_type:=$VICON_TOPIC_TYPE; exec bash"
+    px4_topic_name:=$PX4_TOPIC_NAME; exec bash"
 
 echo ""
 echo "--------------------------------------"
 echo "Startup Successful!"
 echo "--------------------------------------"
 echo "Session: $SESSION_NAME"
-echo "Vicon Topic: $VICON_TOPIC_NAME ($VICON_TOPIC_TYPE)"
+echo "PX4 Topic: $PX4_TOPIC_NAME"
 echo ""
-echo "This node converts Vicon data to target topics:"
-echo "  - Subscribes: $VICON_TOPIC_NAME"
+echo "This node converts PX4 odometry data to target topics:"
+echo "  - Subscribes: $PX4_TOPIC_NAME (PX4 VehicleOdometry)"
 echo "  - Publishes: /target/position"
 echo "  - Publishes: /target/velocity"
 echo ""
-echo "Note: Make sure Vicon system is running and publishing to $VICON_TOPIC_NAME!"
+echo "Note: Make sure PX4 is running and publishing to $PX4_TOPIC_NAME!"
 echo "--------------------------------------"
 echo "Attaching to session in 1 second..."
 sleep 1

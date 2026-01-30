@@ -6,15 +6,13 @@ ViconToTargetNode::ViconToTargetNode()
   , has_position_data_(false)
 {
   // 声明并获取参数
-  vicon_topic_name_ = this->declare_parameter("vicon_topic_name", "/vicon/pose");
-  vicon_topic_type_ = this->declare_parameter("vicon_topic_type", "PoseStamped");  // "PoseStamped" 或 "TransformStamped"
+  px4_topic_name_ = this->declare_parameter("px4_topic_name", "/px4_3/fmu/out/vehicle_odometry");
   velocity_calc_window_ = this->declare_parameter("velocity_calc_window", 0.1);  // 速度计算时间窗口 [s]
   max_history_size_ = this->declare_parameter("max_history_size", 50);  // 位置历史最大长度
   
   RCLCPP_INFO(this->get_logger(), 
-              "=== Vicon to Target Converter Node ===");
-  RCLCPP_INFO(this->get_logger(), "Vicon topic name: %s", vicon_topic_name_.c_str());
-  RCLCPP_INFO(this->get_logger(), "Vicon topic type: %s", vicon_topic_type_.c_str());
+              "=== PX4 to Target Converter Node ===");
+  RCLCPP_INFO(this->get_logger(), "PX4 topic name: %s", px4_topic_name_.c_str());
   RCLCPP_INFO(this->get_logger(), "Velocity calculation window: %.3f s", velocity_calc_window_);
   RCLCPP_INFO(this->get_logger(), "Max position history size: %d", max_history_size_);
   
@@ -27,57 +25,39 @@ ViconToTargetNode::ViconToTargetNode()
     "/target/velocity", 
     rclcpp::QoS(10));
   
-  // 根据话题类型创建订阅者
-  if (vicon_topic_type_ == "PoseStamped") {
-    vicon_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-      vicon_topic_name_,
-      rclcpp::QoS(10),
-      std::bind(&ViconToTargetNode::vicon_pose_callback, this, std::placeholders::_1));
-    RCLCPP_INFO(this->get_logger(), "Subscribed to PoseStamped topic: %s", vicon_topic_name_.c_str());
-  } else if (vicon_topic_type_ == "TransformStamped") {
-    vicon_transform_sub_ = this->create_subscription<geometry_msgs::msg::TransformStamped>(
-      vicon_topic_name_,
-      rclcpp::QoS(10),
-      std::bind(&ViconToTargetNode::vicon_transform_callback, this, std::placeholders::_1));
-    RCLCPP_INFO(this->get_logger(), "Subscribed to TransformStamped topic: %s", vicon_topic_name_.c_str());
-  } else {
-    RCLCPP_ERROR(this->get_logger(), 
-                 "Invalid vicon_topic_type: %s. Must be 'PoseStamped' or 'TransformStamped'",
-                 vicon_topic_type_.c_str());
-    throw std::runtime_error("Invalid vicon_topic_type parameter");
-  }
+  // 创建订阅者（只支持VehicleOdometry）
+  px4_odometry_sub_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
+    px4_topic_name_,
+    rclcpp::SensorDataQoS(),
+    std::bind(&ViconToTargetNode::px4_odometry_callback, this, std::placeholders::_1));
+  RCLCPP_INFO(this->get_logger(), "Subscribed to VehicleOdometry topic: %s", px4_topic_name_.c_str());
   
   RCLCPP_INFO(this->get_logger(), "Publishing to /target/position and /target/velocity");
-  RCLCPP_INFO(this->get_logger(), "Ready to convert Vicon data to target topics");
+  RCLCPP_INFO(this->get_logger(), "Ready to convert PX4 odometry data to target topics");
 }
 
-void ViconToTargetNode::vicon_pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+void ViconToTargetNode::px4_odometry_callback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg)
 {
-  // 提取位置信息
-  geometry_msgs::msg::Point current_pos = msg->pose.position;
-  rclcpp::Time current_time = msg->header.stamp;
-  
-  // 发布位置
-  publish_target_position(current_pos.x, current_pos.y, current_pos.z);
-  
-  // 计算并发布速度
-  calculate_velocity_from_position(current_pos, current_time);
-}
-
-void ViconToTargetNode::vicon_transform_callback(const geometry_msgs::msg::TransformStamped::SharedPtr msg)
-{
-  // 从Transform中提取位置信息
+  // 从VehicleOdometry中提取位置信息（PX4使用NED坐标系）
   geometry_msgs::msg::Point current_pos;
-  current_pos.x = msg->transform.translation.x;
-  current_pos.y = msg->transform.translation.y;
-  current_pos.z = msg->transform.translation.z;
-  rclcpp::Time current_time = msg->header.stamp;
+  current_pos.x = msg->position[0];  // North (NED)
+  current_pos.y = msg->position[1];  // East (NED)
+  current_pos.z = msg->position[2];  // Down (NED)
+  
+  // 使用节点时钟获取当前时间（更可靠）
+  rclcpp::Time current_time = this->now();
   
   // 发布位置
   publish_target_position(current_pos.x, current_pos.y, current_pos.z);
   
-  // 计算并发布速度
-  calculate_velocity_from_position(current_pos, current_time);
+  // 如果有速度信息且有效，直接使用；否则通过位置差分计算
+  if (!std::isnan(msg->velocity[0]) && !std::isnan(msg->velocity[1]) && !std::isnan(msg->velocity[2])) {
+    // PX4速度也是NED坐标系
+    publish_target_velocity(msg->velocity[0], msg->velocity[1], msg->velocity[2]);
+  } else {
+    // 速度无效，通过位置差分计算
+    calculate_velocity_from_position(current_pos, current_time);
+  }
 }
 
 void ViconToTargetNode::publish_target_position(double x, double y, double z)

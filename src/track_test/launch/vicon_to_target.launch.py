@@ -6,24 +6,17 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     """
-    Launch vicon_to_target_node to convert Vicon topics to target topics.
+    Launch vicon_to_target_node to convert PX4 VehicleOdometry topics to target topics.
     
-    This node subscribes to Vicon position data (PoseStamped or TransformStamped)
+    This node subscribes to PX4 VehicleOdometry messages
     and publishes target position and velocity topics for track_test_node.
     """
     
     # Declare launch arguments
-    vicon_topic_name_arg = DeclareLaunchArgument(
-        'vicon_topic_name',
-        default_value='/vicon/pose',
-        description='Vicon topic name to subscribe (e.g., /vicon/drone1/pose)'
-    )
-    
-    vicon_topic_type_arg = DeclareLaunchArgument(
-        'vicon_topic_type',
-        default_value='PoseStamped',
-        choices=['PoseStamped', 'TransformStamped'],
-        description='Vicon topic type: PoseStamped or TransformStamped'
+    px4_topic_name_arg = DeclareLaunchArgument(
+        'px4_topic_name',
+        default_value='/px4_3/fmu/out/vehicle_odometry',
+        description='PX4 VehicleOdometry topic name (e.g., /px4_3/fmu/out/vehicle_odometry)'
     )
     
     velocity_calc_window_arg = DeclareLaunchArgument(
@@ -44,8 +37,7 @@ def generate_launch_description():
         executable='vicon_to_target_node',
         name='vicon_to_target_node',
         parameters=[{
-            'vicon_topic_name': LaunchConfiguration('vicon_topic_name'),
-            'vicon_topic_type': LaunchConfiguration('vicon_topic_type'),
+            'px4_topic_name': LaunchConfiguration('px4_topic_name'),
             'velocity_calc_window': LaunchConfiguration('velocity_calc_window'),
             'max_history_size': LaunchConfiguration('max_history_size'),
         }],
@@ -53,8 +45,7 @@ def generate_launch_description():
     )
     
     return LaunchDescription([
-        vicon_topic_name_arg,
-        vicon_topic_type_arg,
+        px4_topic_name_arg,
         velocity_calc_window_arg,
         max_history_size_arg,
         vicon_to_target_node,

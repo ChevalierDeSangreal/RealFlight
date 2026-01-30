@@ -101,6 +101,7 @@ add_executable(vicon_to_target_node
 ament_target_dependencies(vicon_to_target_node
   rclcpp
   geometry_msgs
+  px4_msgs
 )
 
 # Link TensorFlow Lite and its dependencies based on build environment
